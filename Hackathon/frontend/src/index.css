@@ -1,0 +1,165 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import 'bootstrap-icons/font/bootstrap-icons.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Localyse — Pastel Fintech Design System
+   Soft pink primary, lavender secondary, warm pastel yellow accents.
+   Production-grade. All colors HSL. */
+
+@layer base {
+  :root {
+    /* Off-white canvas */
+    --background: 30 30% 98.5%;          /* warm off-white #FBF9F7 */
+    --foreground: 260 18% 14%;           /* near-black with violet hint */
+
+    --card: 0 0% 100%;
+    --card-foreground: 260 18% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 260 18% 14%;
+
+    /* Primary — soft pink */
+    --primary: 340 75% 65%;              /* #EA6F9A-ish */
+    --primary-hover: 340 70% 58%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 340 90% 96%;         /* #FCE7EE pastel pink wash */
+
+    /* Secondary — lavender purple */
+    --secondary-accent: 265 70% 72%;     /* lavender main */
+    --secondary-accent-fg: 0 0% 100%;
+    --lavender-soft: 265 75% 95%;        /* pale lavender wash */
+
+    --secondary: 280 25% 96%;            /* neutral surface tint */
+    --secondary-foreground: 260 18% 18%;
+
+    --muted: 280 20% 96%;
+    --muted-foreground: 260 8% 48%;
+
+    --accent: 280 25% 95%;
+    --accent-foreground: 260 18% 18%;
+
+    --destructive: 0 70% 62%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 50% 45%;
+    --success-soft: 152 55% 94%;
+
+    /* Warm pastel yellow — alerts/badges/highlights */
+    --warning: 42 95% 58%;
+    --warning-soft: 48 100% 92%;         /* #FFF4C9 buttery pastel */
+    --warning-fg: 38 80% 32%;
+
+    --border: 280 20% 92%;
+    --input: 280 20% 92%;
+    --ring: 340 75% 65%;
+
+    --radius: 1rem;
+
+    /* Pastel category palette */
+    --cat-coffee-bg: 28 80% 94%;
+    --cat-coffee-fg: 28 60% 38%;
+    --cat-food-bg: 12 85% 94%;
+    --cat-food-fg: 12 65% 48%;
+    --cat-retail-bg: 265 75% 95%;
+    --cat-retail-fg: 265 55% 50%;
+    --cat-gym-bg: 152 55% 92%;
+    --cat-gym-fg: 152 50% 32%;
+    --cat-flash-bg: 48 100% 92%;
+    --cat-flash-fg: 38 80% 38%;
+
+    --shadow-xs: 0 1px 2px 0 hsl(280 20% 25% / 0.04);
+    --shadow-sm: 0 1px 3px 0 hsl(280 20% 25% / 0.05), 0 1px 2px -1px hsl(280 20% 25% / 0.04);
+    --shadow-md: 0 4px 14px -4px hsl(340 30% 40% / 0.08), 0 2px 4px -2px hsl(280 20% 25% / 0.04);
+    --shadow-lg: 0 14px 36px -10px hsl(340 40% 45% / 0.12), 0 4px 12px -4px hsl(280 20% 25% / 0.06);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 260 18% 18%;
+    --sidebar-primary: 340 75% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 340 90% 96%;
+    --sidebar-accent-foreground: 340 60% 35%;
+    --sidebar-border: 280 20% 92%;
+    --sidebar-ring: 340 75% 65%;
+  }
+
+  .dark {
+    --background: 260 22% 8%;
+    --foreground: 280 15% 95%;
+    --card: 260 20% 11%;
+    --card-foreground: 280 15% 95%;
+    --popover: 260 20% 11%;
+    --popover-foreground: 280 15% 95%;
+    --primary: 340 75% 70%;
+    --primary-hover: 340 70% 62%;
+    --primary-foreground: 260 22% 8%;
+    --primary-soft: 340 40% 18%;
+    --secondary-accent: 265 70% 75%;
+    --lavender-soft: 265 35% 18%;
+    --secondary: 260 18% 15%;
+    --secondary-foreground: 280 15% 92%;
+    --muted: 260 18% 14%;
+    --muted-foreground: 280 10% 62%;
+    --accent: 260 18% 15%;
+    --accent-foreground: 280 15% 92%;
+    --warning: 42 90% 62%;
+    --warning-soft: 38 40% 20%;
+    --warning-fg: 48 95% 80%;
+    --success: 152 50% 55%;
+    --success-soft: 152 35% 18%;
+    --border: 260 18% 18%;
+    --input: 260 18% 18%;
+    --ring: 340 75% 70%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; box-sizing: border-box; }
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    -webkit-font-smoothing: antialiased;
+    min-width: 320px;
+    overflow-x: hidden;
+  }
+  #root { min-height: 100svh; overflow-x: hidden; }
+  img, video, canvas, svg, iframe { max-width: 100%; }
+  button, input, select, textarea { font: inherit; min-width: 0; }
+  h1, h2, h3, h4 { letter-spacing: -0.02em; }
+}
+
+@layer utilities {
+  .shadow-xs { box-shadow: var(--shadow-xs); }
+  .shadow-sm { box-shadow: var(--shadow-sm); }
+  .shadow-md { box-shadow: var(--shadow-md); }
+  .shadow-lg { box-shadow: var(--shadow-lg); }
+
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+  .safe-x { width: min(100%, 100vw); overflow-x: hidden; }
+  .tap-target { min-height: 44px; min-width: 44px; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { scrollbar-width: none; }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up { animation: fade-up 0.35s ease-out both; }
+
+  @keyframes soft-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--warning) / 0.45); }
+    50% { box-shadow: 0 0 0 6px hsl(var(--warning) / 0); }
+  }
+  .animate-soft-pulse { animation: soft-pulse 2s ease-in-out infinite; }
+}
+
+.bi { line-height: 1; vertical-align: -0.125em; }

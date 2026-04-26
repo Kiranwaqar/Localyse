@@ -1,0 +1,9 @@
+{
+  "name": "localyse",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "vercel-build": "npm --prefix frontend run build",
+    "check": "node --check api/index.js && npm --prefix backend run check && npm --prefix frontend run build"
+  }
+}

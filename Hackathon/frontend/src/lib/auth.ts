@@ -1,0 +1,34 @@
+export type Role = 'customer' | 'merchant';
+
+const KEY = 'citywallet_session';
+
+export interface Session {
+  _id?: string;
+  email: string;
+  role: Role;
+  name?: string;
+  category?: string;
+  location?: {
+    lat?: number;
+    lng?: number;
+    address?: string;
+  };
+  preferences?: string[];
+}
+
+export const getSession = (): Session | null => {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setSession = (s: Session) => {
+  localStorage.setItem(KEY, JSON.stringify(s));
+};
+
+export const clearSession = () => {
+  localStorage.removeItem(KEY);
+};

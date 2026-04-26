@@ -2,6 +2,7 @@ import type { Role, Session } from './auth';
 import type {
   CouponClaimsResponse,
   FoodAnalysis,
+  MoodSuggestion,
   Offer,
   OfferAnalytics,
   WalletCategory,
@@ -288,6 +289,17 @@ export const getCustomerFoodAnalysis = (payload: { customerId?: string; customer
 
   return request<FoodAnalysis>(`/api/offers/food-analysis/customer?${params.toString()}`);
 };
+
+export const getMoodSuggestion = (payload: {
+  mood: string;
+  customerId?: string;
+  customerEmail?: string;
+  offerIds?: string[];
+}) =>
+  request<MoodSuggestion>('/api/offers/mood-suggestion', {
+    method: 'POST',
+    body: payload,
+  });
 
 export const redeemCouponClaim = (claimId: string, merchantId: string) =>
   request<{

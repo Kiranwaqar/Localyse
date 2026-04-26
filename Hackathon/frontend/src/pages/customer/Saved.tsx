@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { OfferCard } from '@/components/OfferCard';
-import { claimOffer, getCustomerCouponClaims, getCustomerFoodAnalysis, getOffers } from '@/lib/api';
+import { claimOffer, getCustomerCouponClaims, getCustomerFoodAnalysis, getMoodSuggestion, getOffers } from '@/lib/api';
 import { getSession } from '@/lib/auth';
-import type { CouponClaim, FoodAnalysis, Offer } from '@/lib/domain';
+import type { Category, CouponClaim, FoodAnalysis, MoodSuggestion, Offer } from '@/lib/domain';
 import { toast } from 'sonner';
 
 const normalize = (value?: string) => String(value || '').trim().toLowerCase();
@@ -34,6 +34,14 @@ type MoodId = 'tired' | 'stressed' | 'happy' | 'hungry' | 'cozy' | 'focused';
 
 const meatTerms = ['beef', 'chicken', 'mutton', 'lamb', 'meat', 'pepperoni', 'ham', 'bacon', 'turkey', 'fish', 'tuna'];
 const vegetarianTerms = ['veg', 'veggie', 'vegetarian', 'vegan', 'plant', 'salad', 'paneer'];
+const preferenceCategoryMap: Record<string, Category[]> = {
+  coffee: ['coffee'],
+  food: ['food'],
+  vegetarian: ['food'],
+  desserts: ['food'],
+  retail: ['retail'],
+  fitness: ['gym'],
+};
 const moodOptions: { id: MoodId; label: string; icon: string; description: string; keywords: string[] }[] = [
   {
     id: 'tired',
@@ -131,6 +139,19 @@ const average = (values: number[]) =>
   values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
 const hasAnyTerm = (text: string, terms: string[]) => terms.some((term) => text.includes(term));
+const hasHistoryReason = (reasons: string[]) =>
+  reasons.some((reason) => /claim|buy|purchase|time|discount|preference|price|usual|match/i.test(reason));
+const hasMoodReason = (reasons: string[]) => reasons.some((reason) => reason.toLowerCase().includes('mood'));
+
+const getPreferredCategories = (preferences: string[]) =>
+  Array.from(
+    new Set(
+      preferences.flatMap((preference) => preferenceCategoryMap[normalize(preference)] || [])
+    )
+  );
+
+const matchesPreferredCategory = (offer: Offer, preferredCategories: Category[]) =>
+  preferredCategories.length === 0 || preferredCategories.includes(offer.category);
 
 const getMoodBoost = (offer: Offer, moodId: MoodId | '') => {
   if (!moodId) return { score: 0, reasons: [] as string[] };
@@ -276,16 +297,24 @@ const Saved = () => {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [claims, setClaims] = useState<CouponClaim[]>([]);
   const [foodAnalysis, setFoodAnalysis] = useState<FoodAnalysis | null>(null);
+  const [moodSuggestion, setMoodSuggestion] = useState<MoodSuggestion | null>(null);
+  const [moodSuggestionLoading, setMoodSuggestionLoading] = useState(false);
   const [purchases, setPurchases] = useState<LocalPurchase[]>([]);
   const [ignored, setIgnored] = useState<LocalImpression[]>([]);
   const [selectedMood, setSelectedMood] = useState<MoodId | ''>('');
   const [loading, setLoading] = useState(true);
   const purchaseKey = getUserKey('localyse_purchase_history', session?._id, session?.email);
   const impressionKey = getUserKey('localyse_offer_impressions', session?._id, session?.email);
+  const sessionPreferenceKey = (session?.preferences || []).join('|');
 
   const preferences = useMemo(
     () => [session?.category, ...(session?.preferences || [])].filter(Boolean) as string[],
-    [session?.category, session?.preferences]
+    [session?.category, sessionPreferenceKey]
+  );
+  const preferredCategories = useMemo(() => getPreferredCategories(preferences), [preferences]);
+  const categoryFilteredOffers = useMemo(
+    () => offers.filter((offer) => matchesPreferredCategory(offer, preferredCategories)),
+    [offers, preferredCategories]
   );
 
   useEffect(() => {
@@ -319,13 +348,13 @@ const Saved = () => {
   }, [impressionKey, purchaseKey, session?._id, session?.email]);
 
   useEffect(() => {
-    if (offers.length === 0) return;
+    if (categoryFilteredOffers.length === 0) return;
 
     const claimedOfferIds = new Set(claims.map((claim) => claim.offerId));
     const existingIds = new Set(ignored.map((impression) => impression.offerId));
     const nextImpressions = [
       ...ignored,
-      ...offers
+      ...categoryFilteredOffers
         .filter((offer) => !claimedOfferIds.has(offer.id) && !existingIds.has(offer.id))
         .map((offer) => ({
           offerId: offer.id,
@@ -340,12 +369,12 @@ const Saved = () => {
       setIgnored(nextImpressions);
       writeLocalArray(impressionKey, nextImpressions);
     }
-  }, [claims, ignored, impressionKey, offers]);
+  }, [categoryFilteredOffers, claims, ignored, impressionKey]);
 
   const personalizedOffers = useMemo(() => {
     const claimedOfferIds = new Set(claims.map((claim) => claim.offerId));
 
-    return [...offers]
+    return [...categoryFilteredOffers]
       .filter((offer) => !claimedOfferIds.has(offer.id))
       .map((offer) =>
         rankOffer({
@@ -370,23 +399,56 @@ const Saved = () => {
         if (b.score !== a.score) return b.score - a.score;
         return (b.offer.expectedCustomerVolume || 0) - (a.offer.expectedCustomerVolume || 0);
       });
-  }, [claims, ignored, offers, preferences, purchases, selectedMood]);
+  }, [categoryFilteredOffers, claims, ignored, preferences, purchases, selectedMood]);
+
+  useEffect(() => {
+    if (!selectedMood || personalizedOffers.length === 0) {
+      setMoodSuggestion(null);
+      setMoodSuggestionLoading(false);
+      return;
+    }
+
+    let active = true;
+    setMoodSuggestionLoading(true);
+
+    getMoodSuggestion({
+      mood: selectedMood,
+      customerId: session?._id,
+      customerEmail: session?.email,
+      offerIds: personalizedOffers.slice(0, 6).map((ranked) => ranked.offer.id),
+    })
+      .then((suggestion) => {
+        if (active) setMoodSuggestion(suggestion);
+      })
+      .catch(() => {
+        if (active) setMoodSuggestion(null);
+      })
+      .finally(() => {
+        if (active) setMoodSuggestionLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [personalizedOffers, selectedMood, session?._id, session?.email]);
 
   const selectedMoodMeta = moodOptions.find((mood) => mood.id === selectedMood);
-  const moodPick = selectedMood ? personalizedOffers[0] : null;
+  const moodPick = selectedMood
+    ? personalizedOffers.find((ranked) => ranked.offer.id === moodSuggestion?.bestOfferId) || personalizedOffers[0]
+    : null;
+  const moodPickId = moodPick?.offer.id;
   const specialOffers = useMemo(() => {
     const meaningfulPicks = personalizedOffers.filter((ranked) => {
-      const hasMoodReason = ranked.reasons.some((reason) => reason.toLowerCase().includes('mood'));
-      const hasHistoryReason = ranked.reasons.some((reason) =>
-        /claim|buy|purchase|time|discount|preference|price|usual|match/i.test(reason)
-      );
-
-      if (selectedMood) return hasMoodReason || ranked.score >= 12;
-      return hasHistoryReason || ranked.score >= 8;
+      if (selectedMood) return hasMoodReason(ranked.reasons) || ranked.score >= 12;
+      return hasHistoryReason(ranked.reasons) || ranked.score >= 8;
     });
+    const picks = meaningfulPicks.length > 0 ? meaningfulPicks : personalizedOffers.slice(0, 3);
+    const moodPickIndex = moodPickId ? picks.findIndex((ranked) => ranked.offer.id === moodPickId) : -1;
 
-    return (meaningfulPicks.length > 0 ? meaningfulPicks : personalizedOffers.slice(0, 3)).slice(0, 6);
-  }, [personalizedOffers, selectedMood]);
+    if (moodPickIndex <= 0) return picks.slice(0, 6);
+
+    return [picks[moodPickIndex], ...picks.filter((_, index) => index !== moodPickIndex)].slice(0, 6);
+  }, [moodPickId, personalizedOffers, selectedMood]);
 
   const personalizationSummary = useMemo(() => {
     const claimedCategories = Object.entries(countBy(claims, (claim) => claim.category))
@@ -473,7 +535,7 @@ const Saved = () => {
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Personalized picks</p>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">For you</h1>
         <p className="text-sm text-muted-foreground mt-1.5">
-          Ranked by purchase history, claim behavior, time patterns, discount sensitivity, and inferred food/category preferences.
+          Filtered by your account preferences, then ranked by purchase history, claims, time patterns, and mood.
         </p>
       </section>
 
@@ -485,7 +547,9 @@ const Saved = () => {
           <div>
             <p className="text-sm font-semibold">Hyperpersonalized feed</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {personalizationSummary.length > 0
+              {preferredCategories.length > 0
+                ? `Showing ${preferredCategories.join(', ')} offers from your saved preferences${personalizationSummary.length > 0 ? ` · ${personalizationSummary.join(' · ')}` : ''}`
+                : personalizationSummary.length > 0
                 ? personalizationSummary.join(' · ')
                 : 'Learning from your local purchases, claims, ignored offers, and profile preferences.'}
             </p>
@@ -536,6 +600,17 @@ const Saved = () => {
                 <p className="mt-1 text-[11px] text-[#b35f88]">
                   {moodPick.reasons[0] || 'Best match for your current vibe'}
                 </p>
+                <div className="mt-3 rounded-xl bg-white/80 p-3">
+                  <p className="text-[11px] font-semibold text-[#b35f88]">AI mood suggestion</p>
+                  <p className="mt-1 text-xs leading-relaxed text-foreground">
+                    {moodSuggestionLoading
+                      ? 'Asking Localyse AI to compare your current offers...'
+                      : moodSuggestion?.suggestion || `This looks like the best ${selectedMoodMeta.label.toLowerCase()} pick from your filtered offers.`}
+                  </p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                    {moodSuggestion?.moodImpact || selectedMoodMeta.description}
+                  </p>
+                </div>
               </div>
             ) : (
               <p className="mt-3 text-xs text-muted-foreground">
@@ -596,7 +671,11 @@ const Saved = () => {
             <i className="bi bi-stars text-xl text-muted-foreground" />
           </div>
           <p className="font-medium">No special offers yet</p>
-          <p className="text-sm text-muted-foreground mt-1">Pick a mood or claim a few offers so Localyse can learn your taste.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {preferredCategories.length > 0
+              ? 'No live offers match your saved account preferences yet.'
+              : 'Pick a mood or claim a few offers so Localyse can learn your taste.'}
+          </p>
         </div>
       ) : (
         <section className="space-y-3">
@@ -606,21 +685,39 @@ const Saved = () => {
               {selectedMoodMeta ? `${selectedMoodMeta.label} picks` : 'Analyzed picks'}
             </h2>
           </div>
-          {specialOffers.map(({ offer, score, reasons }) => (
-            <div key={offer.id} className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2 px-1">
-                <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[10px] font-semibold text-primary">
-                  Match {Math.max(0, Math.round(score))}
-                </span>
-                {(reasons.length > 0 ? reasons : ['Best available fit']).map((reason) => (
-                  <span key={reason} className="rounded-full bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground">
-                    {reason}
+          {specialOffers.map(({ offer, score, reasons }) => {
+            const isMoodPick = Boolean(selectedMood && offer.id === moodPickId);
+            const fromMoodMatch = Boolean(selectedMood && (isMoodPick || hasMoodReason(reasons)));
+            const fromHistory = hasHistoryReason(reasons);
+
+            return (
+              <div key={offer.id} className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 px-1">
+                  <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[10px] font-semibold text-primary">
+                    Match {Math.max(0, Math.round(score))}
                   </span>
-                ))}
+                  {fromMoodMatch && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#fde7f3] px-2.5 py-1 text-[10px] font-semibold text-[#b35f88]">
+                      <i className="bi bi-magic" />
+                      Mood pick
+                    </span>
+                  )}
+                  {fromHistory && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                      <i className="bi bi-clock-history" />
+                      Based on your history
+                    </span>
+                  )}
+                  {(reasons.length > 0 ? reasons : ['Best available fit']).map((reason) => (
+                    <span key={reason} className="rounded-full bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground">
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+                <OfferCard {...offer} onClaim={() => onClaimOffer(offer)} />
               </div>
-              <OfferCard {...offer} onClaim={() => onClaimOffer(offer)} />
-            </div>
-          ))}
+            );
+          })}
         </section>
       )}
     </div>

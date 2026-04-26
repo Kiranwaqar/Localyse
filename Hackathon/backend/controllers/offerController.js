@@ -18,6 +18,73 @@ const {
 
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
 
+const moodProfiles = {
+  tired: {
+    label: "Tired",
+    intent: "restore energy without feeling heavy",
+    keywords: ["coffee", "tea", "cold", "iced", "smoothie", "juice", "fresh", "protein", "energy"],
+    impact: "It should give them a light energy lift and make the next part of the day feel easier.",
+  },
+  stressed: {
+    label: "Stressed",
+    intent: "feel comforted and calmer",
+    keywords: ["dessert", "cake", "brownie", "sweet", "tea", "soup", "warm", "cookie", "comfort"],
+    impact: "It should feel like a small comfort break and help them slow down for a moment.",
+  },
+  happy: {
+    label: "Happy",
+    intent: "keep the mood fun and shareable",
+    keywords: ["pizza", "burger", "combo", "fries", "share", "family", "shake", "deal"],
+    impact: "It should keep the mood playful and make the offer feel like a small celebration.",
+  },
+  hungry: {
+    label: "Hungry",
+    intent: "feel full and satisfied",
+    keywords: ["meal", "burger", "sandwich", "pizza", "rice", "wrap", "pasta", "biryani", "platter", "combo"],
+    impact: "It should satisfy hunger first, then make the deal feel practical rather than impulsive.",
+  },
+  cozy: {
+    label: "Cozy",
+    intent: "feel warm, relaxed, and settled",
+    keywords: ["latte", "coffee", "tea", "hot", "croissant", "bakery", "cookie", "soup", "warm", "cocoa"],
+    impact: "It should make the moment feel softer and more relaxed.",
+  },
+  focused: {
+    label: "Focused",
+    intent: "stay clear-headed and productive",
+    keywords: ["coffee", "espresso", "protein", "smoothie", "juice", "energy", "quick", "wrap", "salad", "fresh"],
+    impact: "It should support focus with quick energy while avoiding a slow, heavy choice.",
+  },
+};
+
+const getOfferSearchText = (offer) =>
+  [
+    offer.category,
+    offer.offerText,
+    offer.reasonWhyNow,
+    offer.targetItem,
+    offer.metadata?.aiSuggestion,
+    offer.metadata?.expectedBusinessImpact,
+  ]
+    .map(normalizeText)
+    .join(" ");
+
+const scoreOfferForMood = (offer, mood) => {
+  const text = getOfferSearchText(offer);
+  const matchedKeywords = mood.keywords.filter((keyword) => text.includes(keyword));
+  const categoryBoost =
+    mood.label === "Tired" && offer.category === "coffee" ? 8 :
+    mood.label === "Hungry" && ["food", "flash"].includes(offer.category) ? 8 :
+    mood.label === "Cozy" && offer.category === "coffee" ? 8 :
+    mood.label === "Focused" && ["coffee", "gym"].includes(offer.category) ? 8 :
+    0;
+
+  return matchedKeywords.length * 10 + categoryBoost + Number(offer.discountPercentage || 0) / 5;
+};
+
+const summarizeOfferForMood = (offer) =>
+  `${offer.merchantName}: ${offer.offerText}${offer.targetItem ? ` (${offer.targetItem})` : ""}`;
+
 const generateCouponCode = (merchantName = "LOC") => {
   const prefix = String(merchantName)
     .replace(/[^a-z0-9]/gi, "")
@@ -1116,6 +1183,90 @@ const getCustomerFoodAnalysis = async (req, res, next) => {
   }
 };
 
+const getMoodSuggestion = async (req, res, next) => {
+  try {
+    const moodId = normalizeText(req.body.mood);
+    const customerId = String(req.body.customerId || "").trim();
+    const customerEmail = normalizeText(req.body.customerEmail);
+    const offerIds = Array.isArray(req.body.offerIds)
+      ? req.body.offerIds.filter((id) => mongoose.Types.ObjectId.isValid(id)).slice(0, 12)
+      : [];
+    const mood = moodProfiles[moodId];
+
+    if (!mood) {
+      return res.status(400).json({ message: "Valid mood is required." });
+    }
+
+    const [customer, claims, offers] = await Promise.all([
+      customerId && mongoose.Types.ObjectId.isValid(customerId)
+        ? User.findById(customerId).select("name email preferences").lean()
+        : customerEmail
+          ? User.findOne({ email: customerEmail }).select("name email preferences").lean()
+          : null,
+      customerId || customerEmail
+        ? OfferClaim.find({
+            $or: [
+              ...(customerId && mongoose.Types.ObjectId.isValid(customerId) ? [{ customer: customerId }] : []),
+              ...(customerEmail ? [{ customerEmail }] : []),
+            ],
+          })
+            .sort({ claimedAt: -1 })
+            .limit(8)
+            .lean()
+        : [],
+      Offer.find({
+        expiresAt: { $gt: new Date() },
+        ...(offerIds.length > 0 ? { _id: { $in: offerIds } } : {}),
+      })
+        .populate("merchant", "name location category")
+        .sort({ createdAt: -1 })
+        .limit(12)
+        .lean(),
+    ]);
+
+    if (offers.length === 0) {
+      return res.json({
+        mood: moodId,
+        bestOfferId: null,
+        suggestion: `No live offer is available for your ${mood.label.toLowerCase()} mood yet.`,
+        moodImpact: "Check again after merchants publish fresh offers.",
+        source: "local",
+        signals: [],
+      });
+    }
+
+    const bestOffer = [...offers].sort((a, b) => scoreOfferForMood(b, mood) - scoreOfferForMood(a, mood))[0];
+    const preferences = customer?.preferences || [];
+    const claimSummary = claims
+      .slice(0, 5)
+      .map((claim) => `${claim.category}: ${claim.offerText}`)
+      .join("; ");
+    const offerSummary = offers.map(summarizeOfferForMood).join("; ");
+    const ai = await getContextInsights(
+      [
+        "Localyse AI mood recommendation.",
+        `Customer:${customer?.name || "customer"}. Current mood:${mood.label}. Intent:${mood.intent}.`,
+        `Preferences:${preferences.join(", ") || "none"}. Recent claimed offers:${claimSummary || "none"}.`,
+        `Live offer choices:${offerSummary}.`,
+        `Recommend one offer and explain in one sentence how it may affect the customer's ${mood.label.toLowerCase()} mood.`,
+      ].join(" ")
+    );
+
+    return res.json({
+      mood: moodId,
+      bestOfferId: String(bestOffer._id),
+      merchantName: bestOffer.merchantName,
+      offerText: bestOffer.offerText,
+      suggestion: `Choose ${bestOffer.offerText} at ${bestOffer.merchantName}. ${ai.answer}`,
+      moodImpact: mood.impact,
+      source: ai.source,
+      signals: ai.signals,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const redeemClaim = async (req, res, next) => {
   try {
     const { claimId } = req.params;
@@ -1218,6 +1369,7 @@ module.exports = {
   getMerchantClaims,
   getCustomerClaims,
   getCustomerFoodAnalysis,
+  getMoodSuggestion,
   redeemClaim,
   deleteOffer,
 };

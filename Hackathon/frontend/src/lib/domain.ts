@@ -116,6 +116,17 @@ export interface FoodAnalysis {
   }[];
 }
 
+export interface MoodSuggestion {
+  mood: string;
+  bestOfferId: string | null;
+  merchantName?: string;
+  offerText?: string;
+  suggestion: string;
+  moodImpact: string;
+  source: string;
+  signals: string[];
+}
+
 export type WalletCategory = 'food' | 'transport' | 'shopping' | 'entertainment' | 'bills' | 'savings';
 
 export type FinancialState = 'overspending' | 'at_risk' | 'balanced' | 'under_budget';

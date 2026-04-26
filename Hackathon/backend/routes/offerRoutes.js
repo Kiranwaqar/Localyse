@@ -6,6 +6,7 @@ const {
   generateOffers,
   getCustomerClaims,
   getCustomerFoodAnalysis,
+  getMoodSuggestion,
   getMerchantClaims,
   getOfferAnalytics,
   getOffers,
@@ -39,6 +40,7 @@ router.get("/analytics", getOfferAnalytics);
 router.get("/food-analysis/customer", getCustomerFoodAnalysis);
 router.get("/claims/customer", getCustomerClaims);
 router.get("/claims", getMerchantClaims);
+router.post("/mood-suggestion", getMoodSuggestion);
 router.patch("/claims/:claimId/redeem", redeemClaim);
 router.post("/:id/claim", claimOffer);
 router.delete("/:id", deleteOffer);

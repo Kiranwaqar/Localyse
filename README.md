@@ -245,6 +245,6 @@ This project is built for **hackathon and educational use**.
 
 Made with ❤️ by **[shamaiem10](https://github.com/shamaiem10)** & **[Kiranwaqar](https://github.com/Kiranwaqar)**
 
-*HackNtion 5th Hackathon · Localyse · 2025*
+*HackNtion 5th Hackathon · Localyse · 2026*
 
 </div>

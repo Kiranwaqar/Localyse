@@ -30,6 +30,7 @@ For merchants, Localyse helps generate AI offers using:
 
 ### Customer App
 
+- Email + password or Google; email verification; forgot / reset password
 - Personalized live offer feed
 - Nearby offer map with location filtering
 - Mood-based "For You" recommendations
@@ -42,7 +43,9 @@ For merchants, Localyse helps generate AI offers using:
 
 ### Merchant App
 
-- Merchant signup with business category
+- **Invite-only signup**: request access, then owner approval (email or admin API) before creating an account
+- Email + password or Google; email verification; forgot / reset password
+- Merchant signup with business category (after approval)
 - AI offer generation from business files
 - Exact address and map pin selection
 - Published offer cards with actual price and after-offer price
@@ -82,7 +85,9 @@ For merchants, Localyse helps generate AI offers using:
 - Multer
 - XLSX file parsing
 - Nodemailer
+- Google Sign-In (google-auth-library)
 - Tavily API
+- Groq API (see `GROQ_API_KEY` in `.env.example`)
 - Weather context API
 - Geoapify location search
 
@@ -99,9 +104,11 @@ Hackathon/
 ├── backend/                # Express API, models, controllers, services
 │   ├── config/
 │   ├── controllers/
+│   ├── middleware/
 │   ├── models/
 │   ├── routes/
-│   └── services/
+│   ├── services/
+│   └── utils/
 ├── frontend/               # React + Vite customer and merchant apps
 │   └── src/
 │       ├── components/
@@ -122,18 +129,26 @@ cp frontend/.env.example frontend/.env
 
 ### Backend
 
+Use `backend/.env.example` as the source of truth. In addition to core keys, you will typically set:
+
+- `GROQ_API_KEY` — offer synthesis
+- `GOOGLE_CLIENT_ID` — must match the frontend
+- `FRONTEND_URL` — links in emails (verify, password reset, merchant approval)
+- `API_PUBLIC_URL` — public base URL of this API (merchant approve/decline links in email)
+- `MERCHANT_ADMIN_EMAIL`, `MERCHANT_ADMIN_KEY` — invite-only merchant flow
+
 ```text
 PORT=5000
 NODE_ENV=development
 MONGO_URI=your-mongodb-atlas-uri
 TAVILY_API_KEY=your-tavily-api-key
+GROQ_API_KEY=your-groq-api-key
 CORS_ORIGIN=http://localhost:8080
-SMTP_HOST=your-smtp-host
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your-smtp-user
-SMTP_PASS=your-smtp-password
-SMTP_FROM=Localyse <your-smtp-user>
+GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+FRONTEND_URL=http://localhost:8080
+SMTP_*
+MERCHANT_ADMIN_EMAIL=you@example.com
+MERCHANT_ADMIN_KEY=change-me
 ```
 
 ### Frontend
@@ -141,6 +156,7 @@ SMTP_FROM=Localyse <your-smtp-user>
 ```text
 VITE_API_URL=http://localhost:5000
 VITE_GEOAPIFY_API_KEY=your-geoapify-api-key
+VITE_GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
 ```
 
 For Vercel, add the same variables in Vercel Project Settings. `VITE_API_URL` is optional in production because the deployed frontend calls the API on the same domain.
@@ -207,8 +223,8 @@ https://your-project.vercel.app/api/health
 
 ## Core User Flow
 
-1. Merchant signs up and selects a business category.
-2. Merchant uploads sales, inventory, and margin files.
+1. **New merchant:** request access → owner approves → sign up (email or Google) and verify as needed.
+2. Merchant selects a business category and uploads sales, inventory, and margin files.
 3. AI generates a business-safe offer with actual and discounted price.
 4. Customers see personalized, budget-aware offers.
 5. Customer claims an offer and receives a pastel coupon email.

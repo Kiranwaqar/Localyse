@@ -26,7 +26,6 @@
 
 Built with 💙 by
 
-
 | **[shamaiem10](https://github.com/shamaiem10)** | **[Kiranwaqar](https://github.com/Kiranwaqar)** |
 
 </div>
@@ -56,17 +55,21 @@ Most offer apps ask: *"Is this deal attractive?"*
 | 📊 Budget Tracker | See exactly how much you have left before you spend |
 | 🎟️ Smart Coupons | Claim, receive via email, and redeem at the store |
 | 🔁 Redemption History | Track every deal you've used |
+| 🔐 Sign-in & accounts | Email + password, **Google Sign-In**, email verification, **forgot / reset password** |
 
 ### 🏪 For Merchants
 
 | Feature | Description |
 |---|---|
+| ✉️ Invite-only onboarding | New merchants **request access**; owner approves before sign-up (email or Google) |
+| 🎀 Admin approval | Email to platform owner with **one-tap Approve / Decline**; optional API with `MERCHANT_ADMIN_KEY` |
 | 🤖 AI Offer Generator | Upload your sales/inventory files — AI does the rest |
 | 📌 Geo-Pinning | Set your exact store location on a map |
 | 💳 Offer Cards | Show actual price vs. after-offer price clearly |
 | 👤 Coupon Claims Page | View customer name, email, coupon code & redeem |
 | 📈 Analytics Dashboard | Track offer performance in real-time |
 | 📧 Budget-Fit Emails | Notify customers when a new offer fits their wallet |
+| 🔐 Sign-in & accounts | Email + password, **Google Sign-In**, email verification, **forgot / reset password** |
 
 ---
 
@@ -80,6 +83,7 @@ Most offer apps ask: *"Is this deal attractive?"*
 └── 🔵 under_budget     → Highlight best-value deals
 ```
 
+- **Groq** — Merges spreadsheet rollups, Tavily, and weather into structured offer synthesis; configure `GROQ_API_KEY` (falls back to Tavily + heuristics if unset).
 - 🌐 **Tavily API** — Real-time contextual web insights
 - 🌤️ **Weather-aware reasoning** — Offers shift based on conditions
 - 🔮 **Offer impact simulation** — Budget effect previewed before shown
@@ -95,14 +99,16 @@ Hackathon/
 ├── backend/                # Express API, models, controllers, services
 │   ├── config/
 │   ├── controllers/
+│   ├── middleware/
 │   ├── models/
 │   ├── routes/
-│   └── services/
+│   ├── services/
+│   └── utils/
 ├── frontend/               # React + Vite customer and merchant apps
 │   └── src/
 │       ├── components/
 │       ├── lib/
-│       └── pages/
+│       └── pages/          # Auth, verify-email, forgot/reset password, merchant-apply, customer & merchant UIs
 ├── vercel.json             # Vercel deployment config
 └── VERCEL_DEPLOYMENT.md    # Deployment notes
 ```
@@ -118,6 +124,7 @@ Hackathon/
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
 ![TailwindCSS](https://img.shields.io/badge/Tailwind-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)
 ![React Router](https://img.shields.io/badge/React_Router-CA4245?style=flat-square&logo=react-router&logoColor=white)
+![Google Sign-In](https://img.shields.io/badge/Google_Sign_In-4285F4?style=flat-square&logo=google&logoColor=white)
 
 **Backend**
 
@@ -126,9 +133,12 @@ Hackathon/
 ![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=flat-square&logo=mongodb&logoColor=white)
 ![Mongoose](https://img.shields.io/badge/Mongoose-880000?style=flat-square&logoColor=white)
 ![Nodemailer](https://img.shields.io/badge/Nodemailer-22B573?style=flat-square&logoColor=white)
+![bcrypt](https://img.shields.io/badge/bcrypt-00599C?style=flat-square&logoColor=white)
+![google-auth-library](https://img.shields.io/badge/google--auth--library-4285F4?style=flat-square&logo=google&logoColor=white)
 
 **APIs & Services**
 
+![Groq](https://img.shields.io/badge/Groq-F55036?style=flat-square&logoColor=white)
 ![Tavily](https://img.shields.io/badge/Tavily_AI-FF6B35?style=flat-square&logoColor=white)
 ![Geoapify](https://img.shields.io/badge/Geoapify-1A73E8?style=flat-square&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-000000?style=flat-square&logo=vercel&logoColor=white)
@@ -138,76 +148,101 @@ Hackathon/
 
 ## ⚙️ Local Setup
 
+From the **repository root** (`Localyse/`), the app lives under `Hackathon/`.
+
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/localyse.git
-cd localyse
+git clone https://github.com/your-username/Localyse.git
+cd Localyse
 ```
 
 ### 2. Set up environment variables
 
 ```bash
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
+cp Hackathon/backend/.env.example Hackathon/backend/.env
+cp Hackathon/frontend/.env.example Hackathon/frontend/.env
 ```
 
-**Backend (`backend/.env`)**
+**Backend (`Hackathon/backend/.env`)** — see `backend/.env.example` for the full list. Commonly used:
 
 ```env
 PORT=5000
 NODE_ENV=development
 MONGO_URI=your-mongodb-atlas-uri
 TAVILY_API_KEY=your-tavily-api-key
+GROQ_API_KEY=your-groq-api-key
 CORS_ORIGIN=http://localhost:8080
+
+# Google Sign-In (must match the frontend)
+GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+
+# Links in emails (reset password, verify email, merchant approval mail)
+FRONTEND_URL=http://localhost:8080
+# Public API base URL (merchant approval links in email; set in production)
+# API_PUBLIC_URL=https://your-api-host.com
+
 SMTP_HOST=your-smtp-host
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-smtp-user
 SMTP_PASS=your-smtp-password
 SMTP_FROM=Localyse <your-smtp-user>
+
+# Merchant invite / approval
+MERCHANT_ADMIN_EMAIL=you@example.com
+MERCHANT_ADMIN_KEY=long-random-secret
+# MERCHANT_APPROVAL_BYPASS=true   # dev only; omit in production
 ```
 
-**Frontend (`frontend/.env`)**
+**Frontend (`Hackathon/frontend/.env`)**
 
 ```env
 VITE_API_URL=http://localhost:5000
 VITE_GEOAPIFY_API_KEY=your-geoapify-api-key
+VITE_GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
 ```
 
 ### 3. Install dependencies
 
 ```bash
-npm --prefix backend install
-npm --prefix frontend install
+npm --prefix Hackathon/backend install
+npm --prefix Hackathon/frontend install
 ```
 
 ### 4. Run locally
 
 ```bash
 # Terminal 1 — Backend
-npm --prefix backend run dev
+npm --prefix Hackathon/backend run dev
 
 # Terminal 2 — Frontend
-npm --prefix frontend run dev
+npm --prefix Hackathon/frontend run dev
 ```
 
 ### 5. Open in browser
 
 | Service | URL |
 |---|---|
-| 🌐 App | `http://localhost:8080` |
+| 🌐 App | `http://localhost:8080` (or the port Vite prints) |
 | 🩺 Health Check | `http://localhost:5000/api/health` |
-
 
 ---
 
 ## 🔄 Core User Flow
 
+**Merchants (new, production-style)**
+
 ```
-Merchant signs up & selects category
-        ↓
-Uploads sales / inventory / margin files
+Request merchant access → Owner approves (email link or admin API) →
+Sign up (email+password or Google) → Verify email if needed →
+Upload business files & publish AI offers
+```
+
+**Commerce loop**
+
+```
+Merchant uploads sales / inventory / margin files
         ↓
 AI generates a business-safe, margin-aware offer
         ↓
@@ -215,10 +250,15 @@ Customers see personalized, budget-filtered offers
         ↓
 Customer claims → receives pastel coupon via email
         ↓
-Merchant scans & redeems at counter
+Merchant redeems at counter
         ↓
 Customer wallet auto-updates budget category
 ```
+
+**Accounts**
+
+- **Customers & merchants** can use **email + password** or **Google** (where configured).
+- **Forgot password** sends a time-limited reset link; **email verification** applies to local sign-ups as before.
 
 ---
 
@@ -229,9 +269,11 @@ Localyse was built end-to-end for **HackNation 5th Hackathon** as a full-stack A
 - ✅ Real MongoDB persistence
 - ✅ File-based merchant intelligence (XLSX parsing)
 - ✅ Customer wallet & budget tracking
-- ✅ Automated email coupon workflows
+- ✅ Automated email workflows (coupons, verification, password reset, merchant approval)
+- ✅ **Google Sign-In** and **invite-only merchant onboarding** with **owner approval**
 - ✅ Vercel-ready serverless deployment
 - ✅ Live weather & location context
+- ✅ **Groq** + **Tavily** for contextual AI
 
 ---
 
@@ -245,6 +287,6 @@ This project is built for **hackathon and educational use**.
 
 Made with ❤️ by **[shamaiem10](https://github.com/shamaiem10)** & **[Kiranwaqar](https://github.com/Kiranwaqar)**
 
-*HackNtion 5th Hackathon · Localyse · 2026*
+*HackNation 5th Hackathon · Localyse · 2026*
 
 </div>

@@ -300,7 +300,7 @@ flowchart TD
 | 💰 | First-of-its-kind budget-aware offer recommendation engine |
 
 </div>
----
+
 <div align="center">
 
 ## 👩‍💻 Creators
@@ -315,7 +315,6 @@ flowchart TD
 </div>
 
 
----
 
 **Built with 💜 for HackNation 5th Hackathon**
 

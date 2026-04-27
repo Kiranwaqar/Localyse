@@ -28,8 +28,8 @@ const walletSchema = new mongoose.Schema(
     },
     currency: {
       type: String,
-      enum: ["USD"],
-      default: "USD",
+      enum: ["PKR", "USD"],
+      default: "PKR",
     },
     monthlyBudgets: {
       type: categoryBudgetSchema,

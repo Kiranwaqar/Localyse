@@ -52,7 +52,9 @@ For merchants, Localyse helps generate AI offers using:
 
 ### AI and Intelligence
 
-- Tavily-powered contextual insights
+- **Tavily** — live web search + answer for city and category context
+- **Groq** — merges spreadsheet rollups, Tavily, and weather into JSON-structured synthesis (`reasonWhyNow` augment, narrative, risk check, data highlights). Set `GROQ_API_KEY`; if unset, offers still work with Tavily + heuristics only.
+- **Spreadsheet analytics** — XLSX uploads plus pandas-style rollups in Node (revenue concentration, margin spread, inventory pressure). Optional: import **published Google Sheets** via CSV in `sheetUrlService.js` (no key) for demos.
 - Weather-aware offer reasoning
 - Adaptive Budget Intelligence Engine
 - Financial state detection: `overspending`, `at_risk`, `balanced`, `under_budget`

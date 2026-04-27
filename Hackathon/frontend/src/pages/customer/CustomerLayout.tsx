@@ -22,9 +22,9 @@ const CustomerLayout = () => {
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
-      <div className="w-full max-w-3xl mx-auto relative min-h-screen flex flex-col overflow-x-hidden">
+      <div className="w-full max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto relative min-h-screen flex flex-col overflow-x-hidden px-0 sm:px-4 lg:px-8 xl:px-10">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 bg-background/85 backdrop-blur-md border-b border-border/70 px-3 xs:px-4 sm:px-5 h-14 flex items-center justify-between">
+        <header className="sticky top-0 z-20 bg-background/85 backdrop-blur-md border-b border-border/70 px-3 xs:px-4 sm:px-5 lg:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <i className="bi bi-wallet2 text-primary-foreground text-sm" />
@@ -50,7 +50,7 @@ const CustomerLayout = () => {
         </main>
 
         {/* Bottom nav */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-3xl bg-card/95 backdrop-blur-md border-t border-border px-1.5 sm:px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-start sm:justify-around gap-1 overflow-x-auto scrollbar-none z-30">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl bg-card/95 backdrop-blur-md border-t border-border px-1.5 sm:px-2 lg:px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-start sm:justify-around gap-1 overflow-x-auto scrollbar-none z-30">
           {tabs.map(({ to, icon, activeIcon, label, end }) => (
             <NavLink
               key={to}

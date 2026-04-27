@@ -9,6 +9,7 @@ const {
   getMoodSuggestion,
   getMerchantClaims,
   getOfferAnalytics,
+  getForYouOffers,
   getOffers,
   redeemClaim,
 } = require("../controllers/offerController");
@@ -36,6 +37,7 @@ const upload = multer({
 });
 
 router.get("/", getOffers);
+router.get("/for-you", getForYouOffers);
 router.get("/analytics", getOfferAnalytics);
 router.get("/food-analysis/customer", getCustomerFoodAnalysis);
 router.get("/claims/customer", getCustomerClaims);

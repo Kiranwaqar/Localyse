@@ -32,9 +32,19 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
       minlength: 6,
       select: false,
+    },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+    },
+    googleSub: {
+      type: String,
+      sparse: true,
+      unique: true,
+      trim: true,
     },
     role: {
       type: String,
@@ -47,9 +57,33 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    emailVerified: {
+      type: Boolean,
+    },
+    emailVerificationToken: {
+      type: String,
+      select: false,
+      sparse: true,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      select: false,
+    },
+    passwordResetToken: {
+      type: String,
+      select: false,
+      sparse: true,
+    },
+    passwordResetExpires: {
+      type: Date,
+      select: false,
+    },
   },
   { timestamps: true }
 );
+
+userSchema.index({ emailVerificationToken: 1 }, { sparse: true, unique: true });
+userSchema.index({ passwordResetToken: 1 }, { sparse: true, unique: true });
 
 userSchema.index({ email: 1, role: 1 }, { unique: true });
 

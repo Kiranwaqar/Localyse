@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getOfferAnalytics } from '@/lib/api';
+import { formatPkrInteger } from '@/lib/currency';
 import { getSession } from '@/lib/auth';
 import type { OfferAnalytics } from '@/lib/domain';
 
-const formatMoney = (value: number) =>
-  `$${Math.round(value || 0).toLocaleString()}`;
+const formatMoney = (value: number) => formatPkrInteger(value);
 
 const formatClaimTime = (minutes: number) => {
   if (!minutes) return 'No claims yet';
@@ -15,10 +15,42 @@ const formatClaimTime = (minutes: number) => {
   return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
 };
 
+const norm = (s: string | undefined | null) => String(s || '').toLowerCase().trim();
+
+const matchesOfferSearch = (
+  offer: OfferAnalytics['offers'][number],
+  q: string
+) => {
+  if (!q) return true;
+  const hay = [
+    offer.id,
+    offer.offerText,
+    offer.merchantName,
+    String(offer.claimCount),
+    String(offer.expectedCustomerVolume),
+    String(offer.revenueAttributed),
+    offer.createdAt,
+    offer.expiresAt,
+  ]
+    .map(norm)
+    .join(' ');
+  return q.split(/\s+/).every((word) => word.length === 0 || hay.includes(word));
+};
+
+const matchesExpiredSearch = (
+  row: OfferAnalytics['expiredUnclaimed'][number],
+  q: string
+) => {
+  if (!q) return true;
+  const hay = [row.id, row.offerText, row.targetItem, row.aiReason, row.expiredAt].map(norm).join(' ');
+  return q.split(/\s+/).every((word) => word.length === 0 || hay.includes(word));
+};
+
 const Analytics = () => {
   const session = getSession();
   const [analytics, setAnalytics] = useState<OfferAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     getOfferAnalytics(session?._id)
@@ -28,6 +60,15 @@ const Analytics = () => {
   }, [session?._id]);
 
   const summary = analytics?.summary;
+  const query = search.trim().toLowerCase();
+  const filteredOffers = useMemo(() => {
+    if (!analytics?.offers) return [];
+    return analytics.offers.filter((o) => matchesOfferSearch(o, query));
+  }, [analytics?.offers, query]);
+  const filteredExpired = useMemo(() => {
+    if (!analytics?.expiredUnclaimed) return [];
+    return analytics.expiredUnclaimed.filter((o) => matchesExpiredSearch(o, query));
+  }, [analytics?.expiredUnclaimed, query]);
 
   const stats = [
     { label: 'Offers published', value: summary?.publishedCount.toString() || '0', icon: 'bi-broadcast' },
@@ -39,7 +80,7 @@ const Analytics = () => {
   ];
 
   return (
-    <div className="w-full max-w-6xl p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
+    <div className="w-full max-w-6xl xl:max-w-7xl mx-auto p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Insights</p>
@@ -50,7 +91,7 @@ const Analytics = () => {
         </div>
       </header>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 min-w-0">
         {stats.map((s) => (
           <div key={s.label} className="bg-card border border-border rounded-2xl p-5 shadow-xs">
             <div className="flex items-center justify-between mb-3">
@@ -74,7 +115,7 @@ const Analytics = () => {
             </p>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-2 gap-4 sm:gap-5">
+          <div className="grid md:grid-cols-2 gap-4 sm:gap-5 min-w-0">
             <InsightPanel
               icon="bi-trophy"
               title="Most redeemed offer"
@@ -85,36 +126,91 @@ const Analytics = () => {
               icon="bi-graph-up-arrow"
               title="Estimated revenue uplift"
               value={formatMoney(summary?.estimatedUplift || 0)}
-              body={`Attributed revenue ${formatMoney(summary?.revenueAttributed || 0)} vs baseline day ${formatMoney(summary?.baselineDayRevenue || 0)}.`}
+              body={
+                summary?.upliftIsComparable === false
+                  ? 'Upload a finance sheet when generating offers so we can use your average PKR per customer as the baseline. Uplift compares actual paid on redemptions to that counterfactual.'
+                  : `Actual paid on ${summary?.redeemCount ?? 0} redemptions: ${formatMoney(
+                      summary?.revenueAttributed || 0
+                    )}. Counterfactual: ${formatMoney(
+                      summary?.counterfactualRevenue || 0
+                    )} (${summary?.redeemCount ?? 0} × ~${formatMoney(
+                      summary?.baselineAveragePerCustomer || 0
+                    )} avg from your data). Reference: ~${formatMoney(
+                      summary?.baselineDayRevenue || 0
+                    )} mean day revenue.`
+              }
             />
 
-            <div className="lg:col-span-2 space-y-3">
-              <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2">
+            <div className="md:col-span-2 space-y-3 min-w-0">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-sm font-semibold">Offer-level performance</h2>
-                <span className="text-xs text-muted-foreground">{analytics.offers.length} offers</span>
+                <span className="text-xs text-muted-foreground tabular-nums w-fit">
+                  {query ? (
+                    <>
+                      {filteredOffers.length} of {analytics.offers.length} offers
+                    </>
+                  ) : (
+                    <>{analytics.offers.length} offers</>
+                  )}
+                </span>
               </div>
-              {analytics.offers.map((offer) => (
-                <div key={offer.id} className="rounded-2xl border border-border p-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
-                  <div className="w-full min-w-0 sm:flex-1">
-                    <p className="text-sm font-medium">{offer.offerText}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{offer.merchantName}</p>
-                  </div>
-                  <Metric label="Claims" value={offer.claimCount.toString()} />
-                  <Metric label="Expected" value={offer.expectedCustomerVolume.toString()} />
-                  <Metric label="Revenue" value={formatMoney(offer.revenueAttributed)} />
+              {analytics.offers.length > 0 && (
+                <div className="relative">
+                  <i className="bi bi-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm" />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Filter by offer, merchant, claims, revenue, dates…"
+                    className="w-full min-h-10 rounded-xl border border-border bg-background pl-9 pr-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    aria-label="Filter analytics offers"
+                  />
                 </div>
-              ))}
+              )}
+              {filteredOffers.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center rounded-2xl border border-dashed border-border">
+                  No offers match &quot;{search.trim()}&quot;.
+                </p>
+              ) : (
+                filteredOffers.map((offer) => (
+                  <div
+                    key={offer.id}
+                    className="rounded-2xl border border-border p-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3"
+                  >
+                    <div className="w-full min-w-0 sm:flex-1">
+                      <p className="text-sm font-medium">{offer.offerText}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{offer.merchantName}</p>
+                    </div>
+                    <Metric label="Claims" value={offer.claimCount.toString()} />
+                    <Metric label="Expected" value={offer.expectedCustomerVolume.toString()} />
+                    <Metric label="Revenue" value={formatMoney(offer.revenueAttributed)} />
+                  </div>
+                ))
+              )}
             </div>
 
             {analytics.expiredUnclaimed.length > 0 && (
-              <div className="lg:col-span-2 space-y-3">
-                <h2 className="text-sm font-semibold">Expired unclaimed offers</h2>
-                {analytics.expiredUnclaimed.map((offer) => (
-                  <div key={offer.id} className="rounded-2xl border border-warning/30 bg-warning-soft/20 p-4">
-                    <p className="text-sm font-medium">{offer.offerText}</p>
-                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{offer.aiReason}</p>
-                  </div>
-                ))}
+              <div className="md:col-span-2 space-y-3 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <h2 className="text-sm font-semibold">Expired unclaimed offers</h2>
+                  {query && (
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {filteredExpired.length} of {analytics.expiredUnclaimed.length} shown
+                    </span>
+                  )}
+                </div>
+                {filteredExpired.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-3 text-center rounded-2xl border border-dashed border-border">
+                    No expired offers match this search.
+                  </p>
+                ) : (
+                  filteredExpired.map((offer) => (
+                    <div key={offer.id} className="rounded-2xl border border-warning/30 bg-warning-soft/20 p-4">
+                      <p className="text-sm font-medium">{offer.offerText}</p>
+                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{offer.aiReason}</p>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>

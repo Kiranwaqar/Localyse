@@ -15,8 +15,8 @@ const transactionSchema = new mongoose.Schema(
     },
     currency: {
       type: String,
-      enum: ["USD"],
-      default: "USD",
+      enum: ["PKR", "USD"],
+      default: "PKR",
     },
     merchant: {
       type: String,

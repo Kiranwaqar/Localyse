@@ -67,6 +67,17 @@ const merchantSchema = new mongoose.Schema(
       minlength: 6,
       select: false,
     },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+    },
+    googleSub: {
+      type: String,
+      sparse: true,
+      unique: true,
+      trim: true,
+    },
     category: {
       type: String,
       required: true,
@@ -78,10 +89,33 @@ const merchantSchema = new mongoose.Schema(
       type: businessRulesSchema,
       default: () => ({}),
     },
+    emailVerified: {
+      type: Boolean,
+    },
+    emailVerificationToken: {
+      type: String,
+      select: false,
+      sparse: true,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      select: false,
+    },
+    passwordResetToken: {
+      type: String,
+      select: false,
+      sparse: true,
+    },
+    passwordResetExpires: {
+      type: Date,
+      select: false,
+    },
   },
   { timestamps: true }
 );
 
 merchantSchema.index({ category: 1 });
+merchantSchema.index({ emailVerificationToken: 1 }, { sparse: true, unique: true });
+merchantSchema.index({ passwordResetToken: 1 }, { sparse: true, unique: true });
 
 module.exports = mongoose.model("Merchant", merchantSchema);

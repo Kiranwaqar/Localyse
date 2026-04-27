@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "check": "node --check server.js && node --check app.js && node --check config/db.js && node --check controllers/userController.js && node --check controllers/merchantController.js && node --check controllers/offerController.js && node --check controllers/walletController.js && node --check models/OfferClaim.js && node --check models/Wallet.js && node --check models/Transaction.js && node --check services/tavilyService.js && node --check services/dataInsightService.js && node --check services/weatherService.js && node --check services/emailService.js && node --check services/budgetIntelligenceService.js"
+    "check": "node --check server.js && node --check app.js && node --check config/db.js && node --check utils/signupEmailPolicy.js && node --check utils/appUrl.js && node --check utils/merchantEmailReviewPage.js && node --check utils/emailVerificationToken.js && node --check utils/passwordResetToken.js && node --check utils/merchantSignupGate.js && node --check middleware/merchantAdminAuth.js && node --check controllers/userController.js && node --check controllers/merchantController.js && node --check controllers/merchantApplicationController.js && node --check controllers/authController.js && node --check routes/authRoutes.js && node --check routes/merchantRoutes.js && node --check controllers/offerController.js && node --check controllers/walletController.js && node --check models/OfferClaim.js && node --check models/Wallet.js && node --check models/Transaction.js && node --check models/MerchantApplication.js && node --check services/tavilyService.js && node --check services/dataInsightService.js && node --check services/groqAnalysisService.js && node --check services/forYouMatchService.js && node --check services/walletRecommendationsAIService.js && node --check services/sheetUrlService.js && node --check services/weatherService.js && node --check services/emailService.js && node --check services/budgetIntelligenceService.js"
   },
   "keywords": [
     "localyse",
@@ -22,6 +22,7 @@
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
+    "google-auth-library": "^9.15.1",
     "mongoose": "^8.23.1",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.6",

@@ -1,4 +1,4 @@
-import type { Role, Session } from './auth';
+import type { Role, Session, SignupResult } from './auth';
 import type {
   CouponClaimsResponse,
   FoodAnalysis,
@@ -64,11 +64,40 @@ export const signup = (payload: {
 }) => {
   const path = payload.role === 'merchant' ? '/api/merchants/signup' : '/api/users/signup';
 
-  return request<Session>(path, {
+  return request<SignupResult>(path, {
     method: 'POST',
     body: payload,
   });
 };
+
+export const verifyEmail = (payload: { token: string; role: Role }) =>
+  request<{ message: string; emailVerified: boolean; role: Role }>('/api/auth/verify-email', {
+    method: 'POST',
+    body: payload,
+  });
+
+export const resendVerification = (payload: { email: string; password: string; role: Role }) =>
+  request<{
+    message: string;
+    sent: boolean;
+    alreadyVerified?: boolean;
+    devVerificationPath?: string;
+  }>('/api/auth/resend-verification', {
+    method: 'POST',
+    body: payload,
+  });
+
+export const forgotPassword = (payload: { email: string; role: Role }) =>
+  request<{ message: string; sent: boolean; devResetPath?: string }>('/api/auth/forgot-password', {
+    method: 'POST',
+    body: payload,
+  });
+
+export const resetPassword = (payload: { token: string; role: Role; newPassword: string }) =>
+  request<{ message: string }>('/api/auth/reset-password', {
+    method: 'POST',
+    body: payload,
+  });
 
 export const login = (payload: { email: string; password: string; role: Role }) => {
   const path = payload.role === 'merchant' ? '/api/merchants/login' : '/api/users/login';
@@ -78,6 +107,23 @@ export const login = (payload: { email: string; password: string; role: Role }) 
     body: payload,
   });
 };
+
+export const googleAuth = (payload: {
+  credential: string;
+  role: Role;
+  intent: 'signin' | 'signup';
+  category?: string;
+}) =>
+  request<Session>('/api/auth/google', {
+    method: 'POST',
+    body: payload,
+  });
+
+export const submitMerchantApplication = (payload: { email: string; name?: string; message?: string }) =>
+  request<{ message: string; status: string }>('/api/merchants/apply', {
+    method: 'POST',
+    body: payload,
+  });
 
 export const updateMerchant = (
   merchantId: string,
@@ -191,6 +237,8 @@ const toOffer = (offer: any, index: number): Offer => ({
   expectedCustomerVolume: offer.metadata?.expectedCustomerVolume,
   expectedBusinessImpact: offer.metadata?.expectedBusinessImpact,
   aiSuggestion: offer.metadata?.aiSuggestion,
+  charmLine: typeof offer.metadata?.customerCharmLine === 'string' ? offer.metadata.customerCharmLine : undefined,
+  charmSubtext: typeof offer.metadata?.customerCharmSubtext === 'string' ? offer.metadata.customerCharmSubtext : undefined,
   claimCount: offer.claimCount || 0,
   merchantAddress: getMerchantAddress(offer.merchant) || offer.metadata?.inputAddress,
   location: getMerchantLocation(offer.merchant),
@@ -227,6 +275,30 @@ export const getOffers = async () => {
   return data.map(toOffer);
 };
 
+export const getForYouOffers = async (payload: { customerId?: string; customerEmail?: string }) => {
+  const params = new URLSearchParams();
+  if (payload.customerId) params.set('customerId', payload.customerId);
+  if (payload.customerEmail) params.set('customerEmail', payload.customerEmail);
+  const data = await request<{
+    filterSource: string;
+    message?: string;
+    items?: { offer: any; fitScore: number; reason: string }[];
+    tavilyUsed?: boolean;
+  }>(`/api/offers/for-you?${params.toString()}`);
+
+  const items = Array.isArray(data.items) ? data.items : [];
+  return {
+    filterSource: data.filterSource,
+    message: data.message,
+    tavilyUsed: Boolean(data.tavilyUsed),
+    offers: items.map((item, i) => ({
+      ...toOffer(item.offer, i),
+      forYouScore: item.fitScore,
+      forYouReason: item.reason,
+    })),
+  };
+};
+
 export const claimOffer = (
   offerId: string,
   payload: {
@@ -244,7 +316,7 @@ export const claimOffer = (
     alreadyClaimed: boolean;
     walletImpact?: {
       amount: number;
-      currency: 'USD';
+      currency: 'PKR';
       category: string;
       transactionId?: string;
       message: string;
@@ -308,7 +380,7 @@ export const redeemCouponClaim = (claimId: string, merchantId: string) =>
     redeemedAt: string;
     walletImpact?: {
       amount: number;
-      currency: 'USD';
+      currency: 'PKR';
       category: string;
       transactionId?: string;
       alreadyRecorded?: boolean;

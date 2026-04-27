@@ -26,9 +26,9 @@ const MerchantLayout = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex overflow-x-hidden">
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-border bg-card p-5 sticky top-0 h-screen">
+    <div className="flex h-dvh min-h-0 w-full max-w-full overflow-hidden bg-background">
+      {/* Tablet / laptop sidebar — full viewport height; only main area scrolls */}
+      <aside className="hidden md:flex w-56 lg:w-60 shrink-0 min-h-0 h-full flex-col border-r border-border bg-card p-4 lg:p-5 overflow-y-auto overscroll-contain">
         <div className="flex items-center gap-2.5 mb-10 px-1">
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
             <i className="bi bi-wallet2 text-primary-foreground text-lg" />
@@ -76,8 +76,8 @@ const MerchantLayout = () => {
         </div>
       </aside>
 
-      {/* Mobile top bar */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-background/85 backdrop-blur-md border-b border-border h-14 px-4 flex items-center justify-between">
+      {/* Mobile / narrow tablet top bar */}
+      <header className="md:hidden fixed top-0 left-0 right-0 z-30 bg-background/85 backdrop-blur-md border-b border-border h-14 px-4 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <i className="bi bi-wallet2 text-primary-foreground text-sm" />
@@ -94,7 +94,7 @@ const MerchantLayout = () => {
 
       {/* Mobile menu drawer */}
       {open && (
-        <div className="lg:hidden fixed inset-0 top-14 z-20 bg-background/80 backdrop-blur-sm" onClick={() => setOpen(false)}>
+        <div className="md:hidden fixed inset-0 top-14 z-20 bg-background/80 backdrop-blur-sm" onClick={() => setOpen(false)}>
           <div className="bg-card border-b border-border p-4 space-y-1" onClick={(e) => e.stopPropagation()}>
             {nav.map(({ to, icon, label, end }) => (
               <NavLink
@@ -120,7 +120,7 @@ const MerchantLayout = () => {
         </div>
       )}
 
-      <main className="flex-1 min-w-0 max-w-full overflow-x-hidden pt-14 lg:pt-0">
+      <main className="flex-1 min-h-0 min-w-0 w-full max-w-full overflow-y-auto overflow-x-hidden overscroll-y-contain pt-14 md:pt-0">
         <Outlet />
       </main>
     </div>

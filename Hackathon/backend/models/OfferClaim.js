@@ -78,6 +78,16 @@ const offerClaimSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    /** Post-discount amount at redemption (definitive for analytics). */
+    redeemAmount: {
+      type: Number,
+      min: 0,
+    },
+    /** List price of the offer at redemption (pre-discount). */
+    listPriceAtRedemption: {
+      type: Number,
+      min: 0,
+    },
     notifications: {
       merchant: mongoose.Schema.Types.Mixed,
       customer: mongoose.Schema.Types.Mixed,

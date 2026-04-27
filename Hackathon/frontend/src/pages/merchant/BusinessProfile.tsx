@@ -57,7 +57,7 @@ const BusinessProfile = () => {
   };
 
   return (
-    <div className="w-full max-w-3xl p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
+    <div className="w-full max-w-3xl md:max-w-4xl lg:max-w-5xl mx-auto p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
       <header>
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Business</p>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">{currentSession?.name || 'Your business'}</h1>

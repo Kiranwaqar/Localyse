@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getCouponClaims, redeemCouponClaim } from '@/lib/api';
 import { getSession } from '@/lib/auth';
 import type { CouponClaim, CouponClaimsResponse } from '@/lib/domain';
+import { formatPkrInteger } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const formatDateTime = (value?: string | null) => {
-  if (!value) return 'Not yet';
+  if (!value) return '—';
 
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',
@@ -16,20 +17,32 @@ const formatDateTime = (value?: string | null) => {
   }).format(new Date(value));
 };
 
-const Detail = ({ label, value, mono }: { label: string; value: string; mono?: boolean }) => (
-  <div className="min-w-0 rounded-xl bg-secondary/50 px-3 py-2">
-    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
-    <p className={cn('mt-1 break-all font-medium capitalize text-foreground', mono && 'font-mono normal-case')}>
-      {value}
-    </p>
-  </div>
-);
+const norm = (s: string | undefined | null) => String(s || '').toLowerCase().trim();
+
+const claimMatchesQuery = (claim: CouponClaim, q: string) => {
+  if (!q) return true;
+  const hay = [
+    claim.couponCode,
+    claim.customerName,
+    claim.customerEmail,
+    claim.offerText,
+    claim.targetItem,
+    claim.category,
+    claim.offerId,
+    claim.merchantEmail,
+  ]
+    .map(norm)
+    .join(' ');
+
+  return q.split(/\s+/).every((word) => word.length === 0 || hay.includes(word));
+};
 
 const CouponClaims = () => {
   const session = getSession();
   const [records, setRecords] = useState<CouponClaimsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const loadClaims = useCallback(async (showLoader = true) => {
     if (!session?._id) {
@@ -55,14 +68,12 @@ const CouponClaims = () => {
 
   useEffect(() => {
     const onFocus = () => loadClaims(false);
-
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [loadClaims]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => loadClaims(false), 5000);
-
     return () => window.clearInterval(intervalId);
   }, [loadClaims]);
 
@@ -78,7 +89,6 @@ const CouponClaims = () => {
       const response = await redeemCouponClaim(claim.id, session._id);
       setRecords((current) => {
         if (!current) return current;
-
         return {
           summary: {
             totalClaims: current.summary.totalClaims,
@@ -86,7 +96,7 @@ const CouponClaims = () => {
             pendingClaims: Math.max(0, current.summary.pendingClaims - (claim.redeemedAt ? 0 : 1)),
           },
           claims: current.claims.map((item) =>
-            item.id === claim.id ? { ...item, status: 'redeemed', redeemedAt: response.redeemedAt } : item
+            item.id === claim.id ? { ...item, status: 'redeemed' as const, redeemedAt: response.redeemedAt } : item
           ),
         };
       });
@@ -105,6 +115,9 @@ const CouponClaims = () => {
 
   const summary = records?.summary;
   const claims = records?.claims || [];
+  const query = search.trim().toLowerCase();
+  const filtered = useMemo(() => claims.filter((c) => claimMatchesQuery(c, query)), [claims, query]);
+
   const stats = [
     { label: 'Total claims', value: summary?.totalClaims || 0, icon: 'bi-ticket-perforated' },
     { label: 'Waiting to redeem', value: summary?.pendingClaims || 0, icon: 'bi-hourglass-heart' },
@@ -112,24 +125,22 @@ const CouponClaims = () => {
   ];
 
   return (
-    <div className="w-full max-w-6xl p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
+    <div className="w-full max-w-6xl xl:max-w-7xl mx-auto p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
       <header className="relative overflow-hidden rounded-3xl border border-[#f5c7dc] bg-[#fff4fb] p-4 xs:p-5 sm:p-8 shadow-sm">
         <div className="absolute -right-12 -top-12 h-36 w-36 rounded-full bg-[#ffd6e9]" />
         <div className="absolute right-16 bottom-4 h-16 w-16 rounded-full bg-[#e9ddff]" />
         <div className="relative max-w-2xl">
           <p className="text-xs uppercase tracking-wider text-[#b35f88] mb-2 font-semibold">Coupon records</p>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">
-            Claimed offers, cute and organized.
-          </h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">Claimed offers</h1>
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-            Every customer who claims one of your offers appears here with their email, coupon code, and redemption status.
+            One row per claim—search by code, customer, offer, or item.
           </p>
         </div>
         <button
           onClick={() => loadClaims()}
           className="relative mt-5 inline-flex min-h-10 w-full xs:w-auto items-center justify-center gap-2 rounded-xl bg-white/80 px-4 py-2 text-sm font-semibold text-[#b35f88] ring-1 ring-[#f5c7dc] transition hover:bg-white"
         >
-          <i className="bi bi-arrow-clockwise" /> Refresh records
+          <i className="bi bi-arrow-clockwise" /> Refresh
         </button>
       </header>
 
@@ -146,16 +157,36 @@ const CouponClaims = () => {
       </section>
 
       <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base sm:text-lg font-semibold tracking-tight">Customer coupon list</h2>
-          <span className="rounded-full bg-[#fff4fb] px-3 py-1 text-xs font-medium text-[#b35f88]">
-            {claims.length} records
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h2 className="text-base sm:text-lg font-semibold tracking-tight">Customer coupons</h2>
+          <span className="rounded-full bg-[#fff4fb] px-3 py-1 text-xs font-medium text-[#b35f88] tabular-nums w-fit">
+            {query ? (
+              <>
+                {filtered.length} of {claims.length} shown
+              </>
+            ) : (
+              <>{claims.length} total</>
+            )}
           </span>
         </div>
 
+        {claims.length > 0 && (
+          <div className="relative">
+            <i className="bi bi-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search code, name, email, offer, item…"
+              className="w-full min-h-11 rounded-2xl border border-border bg-card pl-10 pr-4 py-2.5 text-sm shadow-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#b35f88]/30"
+              aria-label="Filter coupon claims"
+            />
+          </div>
+        )}
+
         {loading ? (
           <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
-            Loading coupon records from MongoDB...
+            Loading coupon records…
           </div>
         ) : claims.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-[#f5c7dc] bg-[#fffafd] p-6 xs:p-10 text-center">
@@ -163,115 +194,124 @@ const CouponClaims = () => {
               <i className="bi bi-envelope-heart text-2xl" />
             </div>
             <p className="text-sm font-semibold mt-4">No coupon claims yet</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              When a customer clicks Claim offer, their coupon record will bloom here.
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">When a customer claims an offer, it appears here.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+            No claims match &quot;{search.trim()}&quot;. Try a different search.
           </div>
         ) : (
-          <div className="grid lg:grid-cols-2 gap-4">
-            {claims.map((claim) => (
-              <article
-                key={claim.id}
-                className={cn(
-                  'relative overflow-hidden rounded-3xl border p-4 sm:p-5 shadow-sm transition',
-                  claim.redeemedAt
-                    ? 'border-success/30 bg-success-soft/20'
-                    : 'border-[#f5c7dc] bg-gradient-to-br from-[#fffafd] via-white to-[#f6efff]'
-                )}
-              >
-                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[#fde7f3]/80" />
-                <div className="relative space-y-4">
-                  <div className="flex flex-col xs:flex-row xs:items-start xs:justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wider text-muted-foreground">Coupon code</p>
-                      <p className="mt-1 font-mono text-xl xs:text-2xl font-bold tracking-widest text-[#b35f88] break-all">
-                        {claim.couponCode}
-                      </p>
-                    </div>
-                    <span
+          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-3 font-semibold w-[120px]">Code</th>
+                    <th className="px-3 py-3 font-semibold min-w-[160px]">Customer</th>
+                    <th className="px-3 py-3 font-semibold min-w-[200px]">Offer</th>
+                    <th className="px-3 py-3 font-semibold w-[100px]">Item</th>
+                    <th className="px-3 py-3 font-semibold w-[72px]">%</th>
+                    <th className="px-3 py-3 font-semibold w-[100px]">Est. (PKR)</th>
+                    <th className="px-3 py-3 font-semibold w-[110px]">Claimed</th>
+                    <th className="px-3 py-3 font-semibold w-[110px]">Redeemed</th>
+                    <th className="px-3 py-3 font-semibold w-[100px]">Status</th>
+                    <th className="px-3 py-3 font-semibold w-[120px] text-right pr-4">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((claim) => (
+                    <tr
+                      key={claim.id}
                       className={cn(
-                        'w-fit rounded-full px-3 py-1 text-[11px] font-semibold',
-                        claim.redeemedAt ? 'bg-success text-success-foreground' : 'bg-[#fde7f3] text-[#b35f88]'
+                        'border-b border-border/80 last:border-0 align-top transition-colors',
+                        claim.redeemedAt ? 'bg-success-soft/15' : 'hover:bg-muted/30'
                       )}
                     >
-                      {claim.redeemedAt ? 'Redeemed' : 'Ready to redeem'}
-                    </span>
-                  </div>
-
-                  <div className="rounded-2xl bg-white/75 p-4 ring-1 ring-border/60">
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fde7f3] text-sm font-bold text-[#b35f88]">
-                        {(claim.customerName || 'C')[0].toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">{claim.customerName}</p>
-                        <p className="text-xs text-muted-foreground mt-1 break-all">{claim.customerEmail}</p>
-                        {claim.customerId && (
-                          <p className="text-[10px] text-muted-foreground mt-1 break-all">User ID: {claim.customerId}</p>
+                      <td className="px-3 py-3">
+                        <span className="font-mono text-xs font-bold tracking-wider text-[#b35f88] break-all">
+                          {claim.couponCode}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 min-w-0">
+                        <p className="font-medium text-foreground leading-tight">{claim.customerName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 break-all line-clamp-2">
+                          {claim.customerEmail}
+                        </p>
+                      </td>
+                      <td className="px-3 py-3 min-w-0 max-w-[280px]">
+                        <p className="text-foreground leading-snug line-clamp-2" title={claim.offerText}>
+                          {claim.offerText}
+                        </p>
+                        {claim.category ? (
+                          <p className="text-[10px] text-muted-foreground mt-1 capitalize">{claim.category}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground">
+                        {claim.targetItem ? (
+                          <span className="line-clamp-2" title={claim.targetItem}>
+                            {claim.targetItem}
+                          </span>
+                        ) : (
+                          '—'
                         )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium leading-relaxed">{claim.offerText}</p>
-                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                      {claim.targetItem && (
-                        <span className="rounded-full bg-secondary px-2 py-1">Item: {claim.targetItem}</span>
-                      )}
-                      {claim.discountPercentage ? (
-                        <span className="rounded-full bg-secondary px-2 py-1">{claim.discountPercentage}% off</span>
-                      ) : null}
-                      <span className="rounded-full bg-secondary px-2 py-1">
-                        Claimed {formatDateTime(claim.claimedAt)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 rounded-2xl bg-white/70 p-4 text-xs ring-1 ring-border/60 sm:grid-cols-2">
-                    <Detail label="Merchant" value={claim.merchantName} />
-                    <Detail label="Merchant email" value={claim.merchantEmail || 'Not saved'} />
-                    <Detail label="Offer ID" value={claim.offerId} mono />
-                    <Detail label="Category" value={claim.category || 'Not saved'} />
-                    <Detail label="Status" value={claim.status} />
-                    <Detail label="Offer expires" value={formatDateTime(claim.expiresAt)} />
-                    <Detail label="Claimed date" value={formatDateTime(claim.claimedAt)} />
-                    <Detail label="Redeemed date" value={formatDateTime(claim.redeemedAt)} />
-                    <Detail label="Est. revenue" value={`$${Math.round(claim.estimatedRevenue || 0).toLocaleString()}`} />
-                  </div>
-
-                  <div className="flex flex-col xs:flex-row xs:flex-wrap xs:items-center xs:justify-between gap-3 border-t border-border/70 pt-4">
-                    <p className="text-xs text-muted-foreground">
-                      {claim.redeemedAt ? `Redeemed ${formatDateTime(claim.redeemedAt)}` : 'Ask the customer for this code at checkout.'}
-                    </p>
-                    <button
-                      onClick={() => onRedeem(claim)}
-                      disabled={Boolean(claim.redeemedAt) || redeemingId === claim.id}
-                      className={cn(
-                        'inline-flex min-h-10 w-full xs:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-default disabled:opacity-70',
-                        claim.redeemedAt
-                          ? 'bg-success-soft text-success'
-                          : 'bg-[#b35f88] text-white hover:bg-[#984b72]'
-                      )}
-                    >
-                      {redeemingId === claim.id ? (
-                        <>
-                          <i className="bi bi-arrow-repeat animate-spin" /> Redeeming
-                        </>
-                      ) : claim.redeemedAt ? (
-                        <>
-                          <i className="bi bi-check2-circle" /> Redeemed
-                        </>
-                      ) : (
-                        <>
-                          <i className="bi bi-magic" /> Redeem
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
+                      </td>
+                      <td className="px-3 py-3 tabular-nums text-muted-foreground">
+                        {claim.discountPercentage != null ? `${claim.discountPercentage}%` : '—'}
+                      </td>
+                      <td className="px-3 py-3 tabular-nums text-foreground text-xs">
+                        {formatPkrInteger(claim.estimatedRevenue || 0)}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {formatDateTime(claim.claimedAt)}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {formatDateTime(claim.redeemedAt)}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={cn(
+                            'inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                            claim.redeemedAt ? 'bg-success/15 text-success' : 'bg-[#fde7f3] text-[#b35f88]'
+                          )}
+                        >
+                          {claim.redeemedAt ? 'Done' : 'Pending'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 pr-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => onRedeem(claim)}
+                          disabled={Boolean(claim.redeemedAt) || redeemingId === claim.id}
+                          className={cn(
+                            'inline-flex min-h-9 min-w-[96px] items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition',
+                            claim.redeemedAt
+                              ? 'bg-success-soft text-success cursor-default'
+                              : 'bg-[#b35f88] text-white hover:bg-[#984b72] disabled:opacity-70'
+                          )}
+                        >
+                          {redeemingId === claim.id ? (
+                            <>
+                              <i className="bi bi-arrow-repeat animate-spin" />
+                              <span>…</span>
+                            </>
+                          ) : claim.redeemedAt ? (
+                            <>
+                              <i className="bi bi-check2-circle" />
+                              <span>Redeemed</span>
+                            </>
+                          ) : (
+                            <>
+                              <i className="bi bi-ticket-perforated" />
+                              <span>Redeem</span>
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>

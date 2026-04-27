@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { OfferCard } from '@/components/OfferCard';
-import { claimOffer, getCustomerCouponClaims, getCustomerFoodAnalysis, getMoodSuggestion, getOffers } from '@/lib/api';
+import {
+  claimOffer,
+  getCustomerCouponClaims,
+  getCustomerFoodAnalysis,
+  getForYouOffers,
+  getMoodSuggestion,
+  getOffers,
+} from '@/lib/api';
 import { getSession } from '@/lib/auth';
-import type { Category, CouponClaim, FoodAnalysis, MoodSuggestion, Offer } from '@/lib/domain';
+import type { CouponClaim, FoodAnalysis, MoodSuggestion, Offer } from '@/lib/domain';
 import { toast } from 'sonner';
 
 const normalize = (value?: string) => String(value || '').trim().toLowerCase();
@@ -28,20 +35,12 @@ type RankedOffer = {
   score: number;
   reasons: string[];
   suppressed: boolean;
+  /** True when this row is a mood-only extra, not an AI history match. */
+  moodOnly?: boolean;
 };
 
 type MoodId = 'tired' | 'stressed' | 'happy' | 'hungry' | 'cozy' | 'focused';
 
-const meatTerms = ['beef', 'chicken', 'mutton', 'lamb', 'meat', 'pepperoni', 'ham', 'bacon', 'turkey', 'fish', 'tuna'];
-const vegetarianTerms = ['veg', 'veggie', 'vegetarian', 'vegan', 'plant', 'salad', 'paneer'];
-const preferenceCategoryMap: Record<string, Category[]> = {
-  coffee: ['coffee'],
-  food: ['food'],
-  vegetarian: ['food'],
-  desserts: ['food'],
-  retail: ['retail'],
-  fitness: ['gym'],
-};
 const moodOptions: { id: MoodId; label: string; icon: string; description: string; keywords: string[] }[] = [
   {
     id: 'tired',
@@ -125,9 +124,6 @@ const getText = (offer: Offer) =>
     .map(normalize)
     .join(' ');
 
-const getClaimText = (claim: CouponClaim) =>
-  [claim.category, claim.offerText, claim.targetItem, claim.merchantName].map(normalize).join(' ');
-
 const countBy = <T,>(items: T[], getKey: (item: T) => string | undefined) =>
   items.reduce<Record<string, number>>((counts, item) => {
     const key = normalize(getKey(item));
@@ -138,20 +134,8 @@ const countBy = <T,>(items: T[], getKey: (item: T) => string | undefined) =>
 const average = (values: number[]) =>
   values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
-const hasAnyTerm = (text: string, terms: string[]) => terms.some((term) => text.includes(term));
 const hasHistoryReason = (reasons: string[]) =>
   reasons.some((reason) => /claim|buy|purchase|time|discount|preference|price|usual|match/i.test(reason));
-const hasMoodReason = (reasons: string[]) => reasons.some((reason) => reason.toLowerCase().includes('mood'));
-
-const getPreferredCategories = (preferences: string[]) =>
-  Array.from(
-    new Set(
-      preferences.flatMap((preference) => preferenceCategoryMap[normalize(preference)] || [])
-    )
-  );
-
-const matchesPreferredCategory = (offer: Offer, preferredCategories: Category[]) =>
-  preferredCategories.length === 0 || preferredCategories.includes(offer.category);
 
 const getMoodBoost = (offer: Offer, moodId: MoodId | '') => {
   if (!moodId) return { score: 0, reasons: [] as string[] };
@@ -178,120 +162,6 @@ const getMoodBoost = (offer: Offer, moodId: MoodId | '') => {
   };
 };
 
-const extractPrice = (text: string) => {
-  const match = text.match(/(?:rs\.?|pkr|\$)\s*(\d+(?:,\d{3})*(?:\.\d+)?)/i);
-  return match ? Number(match[1].replace(/,/g, '')) : 0;
-};
-
-const isOldEnoughToCountAsIgnored = (impression: LocalImpression) =>
-  Date.now() - new Date(impression.seenAt).getTime() > 30 * 60 * 1000;
-
-const rankOffer = ({
-  offer,
-  preferences,
-  purchases,
-  claims,
-  ignored,
-}: {
-  offer: Offer;
-  preferences: string[];
-  purchases: LocalPurchase[];
-  claims: CouponClaim[];
-  ignored: LocalImpression[];
-}): RankedOffer => {
-  let score = 0;
-  const reasons: string[] = [];
-  const offerText = getText(offer);
-  const purchaseCategories = countBy(purchases, (purchase) => purchase.category);
-  const purchaseItems = purchases.map((purchase) => normalize(purchase.item)).filter(Boolean);
-  const averagePurchaseAmount = average(purchases.map((purchase) => Number(purchase.amount || 0)).filter((amount) => amount > 0));
-  const offerPrice = extractPrice(offer.offerText);
-  const claimedCategories = countBy(claims, (claim) => claim.category);
-  const ignoredCategories = countBy(ignored.filter(isOldEnoughToCountAsIgnored), (impression) => impression.category);
-  const claimedDiscounts = claims.map((claim) => Number(claim.discountPercentage || 0)).filter((discount) => discount > 0);
-  const averageClaimedDiscount = average(claimedDiscounts);
-  const currentBucket = getHourBucket();
-  const claimedTimeBuckets = countBy(claims, (claim) => getHourBucket(claim.claimedAt));
-  const mostlyVegetarian =
-    claims.some((claim) => hasAnyTerm(getClaimText(claim), vegetarianTerms)) &&
-    !claims.some((claim) => hasAnyTerm(getClaimText(claim), meatTerms));
-
-  preferences.forEach((preference) => {
-    const normalizedPreference = normalize(preference);
-    if (normalizedPreference && offerText.includes(normalizedPreference)) {
-      score += 12;
-      reasons.push(`Matches ${preference}`);
-    }
-  });
-
-  if (purchaseCategories[offer.category]) {
-    score += purchaseCategories[offer.category] * 8;
-    reasons.push(`You often buy ${offer.category}`);
-  }
-
-  if (purchaseItems.some((item) => item && offerText.includes(item))) {
-    score += 10;
-    reasons.push('Similar to your local purchase history');
-  }
-
-  if (averagePurchaseAmount > 0 && offerPrice > 0) {
-    const distanceFromUsualSpend = Math.abs(offerPrice - averagePurchaseAmount) / averagePurchaseAmount;
-    if (distanceFromUsualSpend <= 0.35) {
-      score += 6;
-      reasons.push('Fits your usual price range');
-    } else if (offerPrice > averagePurchaseAmount * 1.8) {
-      score -= 8;
-      reasons.push('Above your usual price range');
-    }
-  }
-
-  if (claimedCategories[offer.category]) {
-    score += claimedCategories[offer.category] * 10;
-    reasons.push(`You claim ${offer.category} deals`);
-  }
-
-  if (claimedTimeBuckets[currentBucket]) {
-    score += claimedTimeBuckets[currentBucket] * 6;
-    reasons.push(`Good for your ${currentBucket} pattern`);
-  }
-
-  if (averageClaimedDiscount > 0) {
-    const discount = Number(offer.discountPercentage || 0);
-    if (discount >= averageClaimedDiscount) {
-      score += 8;
-      reasons.push(`Discount fits your usual ${Math.round(averageClaimedDiscount)}%+ picks`);
-    } else if (discount < Math.max(10, averageClaimedDiscount - 10)) {
-      score -= 12;
-      reasons.push('Lower than your usual discount threshold');
-    }
-  } else if ((offer.discountPercentage || 0) >= 20) {
-    score += 4;
-    reasons.push('Strong starter discount');
-  }
-
-  if (ignoredCategories[offer.category] && !claimedCategories[offer.category]) {
-    score -= ignoredCategories[offer.category] * 7;
-    reasons.push(`Less ${offer.category} because you skipped similar offers`);
-  }
-
-  if (mostlyVegetarian && hasAnyTerm(offerText, meatTerms)) {
-    score -= 40;
-    reasons.push('Hidden lower because your history avoids meat offers');
-  }
-
-  if (claims.length === 0 && purchases.length === 0 && preferences.length === 0) {
-    score += offer.expectedCustomerVolume || 0;
-    reasons.push('Popular nearby offer');
-  }
-
-  return {
-    offer,
-    score,
-    reasons: reasons.slice(0, 3),
-    suppressed: score < -20,
-  };
-};
-
 const Saved = () => {
   const session = getSession();
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -303,35 +173,42 @@ const Saved = () => {
   const [ignored, setIgnored] = useState<LocalImpression[]>([]);
   const [selectedMood, setSelectedMood] = useState<MoodId | ''>('');
   const [loading, setLoading] = useState(true);
+  const [forYouInfo, setForYouInfo] = useState<{ message?: string; filterSource?: string; tavilyUsed?: boolean }>({});
+  const [allLiveOffers, setAllLiveOffers] = useState<Offer[]>([]);
   const purchaseKey = getUserKey('localyse_purchase_history', session?._id, session?.email);
   const impressionKey = getUserKey('localyse_offer_impressions', session?._id, session?.email);
-  const sessionPreferenceKey = (session?.preferences || []).join('|');
-
-  const preferences = useMemo(
-    () => [session?.category, ...(session?.preferences || [])].filter(Boolean) as string[],
-    [session?.category, sessionPreferenceKey]
-  );
-  const preferredCategories = useMemo(() => getPreferredCategories(preferences), [preferences]);
-  const categoryFilteredOffers = useMemo(
-    () => offers.filter((offer) => matchesPreferredCategory(offer, preferredCategories)),
-    [offers, preferredCategories]
-  );
 
   useEffect(() => {
     const loadFeed = async () => {
       try {
-        const [liveOffers, claimHistory, analysis] = await Promise.all([
-          getOffers(),
-          session?._id || session?.email
-            ? getCustomerCouponClaims({ customerId: session?._id, customerEmail: session?.email })
-            : Promise.resolve({ claims: [], summary: { totalClaims: 0, redeemedClaims: 0, pendingClaims: 0 } }),
-          session?._id || session?.email
-            ? getCustomerFoodAnalysis({ customerId: session?._id, customerEmail: session?.email }).catch(() => null)
-            : Promise.resolve(null),
+        setLoading(true);
+        if (!session?._id && !session?.email) {
+          setOffers([]);
+          setAllLiveOffers([]);
+          setClaims([]);
+          setForYouInfo({
+            message: 'Sign in to see offers matched to your coupon claim history (Groq + Tavily on the server).',
+            filterSource: 'none',
+          });
+          setFoodAnalysis(null);
+          return;
+        }
+
+        const [claimHistory, forYou, analysis, liveAll] = await Promise.all([
+          getCustomerCouponClaims({ customerId: session?._id, customerEmail: session?.email }),
+          getForYouOffers({ customerId: session?._id, customerEmail: session?.email }),
+          getCustomerFoodAnalysis({ customerId: session?._id, customerEmail: session?.email }).catch(() => null),
+          getOffers().catch(() => []),
         ]);
 
-        setOffers(liveOffers);
         setClaims(claimHistory.claims);
+        setOffers(forYou.offers);
+        setAllLiveOffers(liveAll);
+        setForYouInfo({
+          message: forYou.message,
+          filterSource: forYou.filterSource,
+          tavilyUsed: forYou.tavilyUsed,
+        });
         setFoodAnalysis(analysis);
         setPurchases(readLocalArray<LocalPurchase>(purchaseKey));
         setIgnored(readLocalArray<LocalImpression>(impressionKey));
@@ -339,22 +216,24 @@ const Saved = () => {
         const message = err instanceof Error ? err.message : 'Could not load personalized offers.';
         toast.error('Could not load For you', { description: message });
         setOffers([]);
+        setAllLiveOffers([]);
+        setForYouInfo({});
       } finally {
         setLoading(false);
       }
     };
 
-    loadFeed();
+    void loadFeed();
   }, [impressionKey, purchaseKey, session?._id, session?.email]);
 
   useEffect(() => {
-    if (categoryFilteredOffers.length === 0) return;
+    if (offers.length === 0) return;
 
     const claimedOfferIds = new Set(claims.map((claim) => claim.offerId));
     const existingIds = new Set(ignored.map((impression) => impression.offerId));
     const nextImpressions = [
       ...ignored,
-      ...categoryFilteredOffers
+      ...offers
         .filter((offer) => !claimedOfferIds.has(offer.id) && !existingIds.has(offer.id))
         .map((offer) => ({
           offerId: offer.id,
@@ -369,40 +248,69 @@ const Saved = () => {
       setIgnored(nextImpressions);
       writeLocalArray(impressionKey, nextImpressions);
     }
-  }, [categoryFilteredOffers, claims, ignored, impressionKey]);
+  }, [offers, claims, ignored, impressionKey]);
 
+  /** Claim-history + AI (Groq/Tavily) — mood does not change these scores. */
   const personalizedOffers = useMemo(() => {
     const claimedOfferIds = new Set(claims.map((claim) => claim.offerId));
 
-    return [...categoryFilteredOffers]
+    return offers
       .filter((offer) => !claimedOfferIds.has(offer.id))
-      .map((offer) =>
-        rankOffer({
-          offer,
-          preferences,
-          purchases,
-          claims,
-          ignored,
-        })
-      )
-      .map((ranked) => {
-        const moodBoost = getMoodBoost(ranked.offer, selectedMood);
-
+      .map((offer) => {
+        const base = Number(offer.forYouScore ?? 0);
+        const baseReasons: string[] = [];
+        if (offer.forYouReason) baseReasons.push(offer.forYouReason);
+        if (forYouInfo?.filterSource === 'groq') baseReasons.push('AI-matched to your claim history (Groq)');
+        else if (forYouInfo?.filterSource === 'heuristic') baseReasons.push('Matched to your claim history (rules)');
         return {
-          ...ranked,
-          score: ranked.score + moodBoost.score,
-          reasons: [...moodBoost.reasons, ...ranked.reasons].slice(0, 3),
-        };
+          offer,
+          score: base,
+          reasons: baseReasons.filter(Boolean).slice(0, 4),
+          suppressed: false,
+        } as RankedOffer;
       })
-      .filter((ranked) => !ranked.suppressed)
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         return (b.offer.expectedCustomerVolume || 0) - (a.offer.expectedCustomerVolume || 0);
       });
-  }, [categoryFilteredOffers, claims, ignored, preferences, purchases, selectedMood]);
+  }, [offers, claims, forYouInfo?.filterSource]);
+
+  /** When a mood is selected: extra live offers scored by mood only (not in history list). */
+  const moodExtraOffers = useMemo((): RankedOffer[] => {
+    if (!selectedMood) return [];
+    const claimedOfferIds = new Set(claims.map((claim) => claim.offerId));
+    const historyIds = new Set(offers.map((o) => o.id));
+    return allLiveOffers
+      .filter((offer) => !claimedOfferIds.has(offer.id) && !historyIds.has(offer.id))
+      .map((offer) => {
+        const moodBoost = getMoodBoost(offer, selectedMood);
+        return {
+          offer,
+          score: moodBoost.score,
+          reasons: [...moodBoost.reasons, 'Extra pick for your mood (live offers)'],
+          suppressed: false,
+          moodOnly: true,
+        } as RankedOffer;
+      })
+      .filter((r) => r.score > 0)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return (b.offer.expectedCustomerVolume || 0) - (a.offer.expectedCustomerVolume || 0);
+      })
+      .slice(0, 5);
+  }, [selectedMood, allLiveOffers, offers, claims]);
+
+  const moodSuggestionPoolIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const r of personalizedOffers.slice(0, 6)) ids.push(r.offer.id);
+    for (const r of moodExtraOffers.slice(0, 6)) {
+      if (!ids.includes(r.offer.id)) ids.push(r.offer.id);
+    }
+    return ids.slice(0, 12);
+  }, [personalizedOffers, moodExtraOffers]);
 
   useEffect(() => {
-    if (!selectedMood || personalizedOffers.length === 0) {
+    if (!selectedMood || moodSuggestionPoolIds.length === 0) {
       setMoodSuggestion(null);
       setMoodSuggestionLoading(false);
       return;
@@ -415,7 +323,7 @@ const Saved = () => {
       mood: selectedMood,
       customerId: session?._id,
       customerEmail: session?.email,
-      offerIds: personalizedOffers.slice(0, 6).map((ranked) => ranked.offer.id),
+      offerIds: moodSuggestionPoolIds,
     })
       .then((suggestion) => {
         if (active) setMoodSuggestion(suggestion);
@@ -430,16 +338,22 @@ const Saved = () => {
     return () => {
       active = false;
     };
-  }, [personalizedOffers, selectedMood, session?._id, session?.email]);
+  }, [moodSuggestionPoolIds, selectedMood, session?._id, session?.email]);
 
   const selectedMoodMeta = moodOptions.find((mood) => mood.id === selectedMood);
+  const allRankedForMoodPick = useMemo(
+    () => [...personalizedOffers, ...moodExtraOffers],
+    [personalizedOffers, moodExtraOffers]
+  );
   const moodPick = selectedMood
-    ? personalizedOffers.find((ranked) => ranked.offer.id === moodSuggestion?.bestOfferId) || personalizedOffers[0]
+    ? allRankedForMoodPick.find((ranked) => ranked.offer.id === moodSuggestion?.bestOfferId) ||
+      personalizedOffers[0] ||
+      moodExtraOffers[0] ||
+      null
     : null;
   const moodPickId = moodPick?.offer.id;
   const specialOffers = useMemo(() => {
     const meaningfulPicks = personalizedOffers.filter((ranked) => {
-      if (selectedMood) return hasMoodReason(ranked.reasons) || ranked.score >= 12;
       return hasHistoryReason(ranked.reasons) || ranked.score >= 8;
     });
     const picks = meaningfulPicks.length > 0 ? meaningfulPicks : personalizedOffers.slice(0, 3);
@@ -448,7 +362,7 @@ const Saved = () => {
     if (moodPickIndex <= 0) return picks.slice(0, 6);
 
     return [picks[moodPickIndex], ...picks.filter((_, index) => index !== moodPickIndex)].slice(0, 6);
-  }, [moodPickId, personalizedOffers, selectedMood]);
+  }, [moodPickId, personalizedOffers]);
 
   const personalizationSummary = useMemo(() => {
     const claimedCategories = Object.entries(countBy(claims, (claim) => claim.category))
@@ -496,6 +410,7 @@ const Saved = () => {
       writeLocalArray(purchaseKey, nextPurchases);
       setPurchases(nextPurchases);
       setOffers((current) => current.filter((item) => item.id !== offer.id));
+      setAllLiveOffers((current) => current.filter((item) => item.id !== offer.id));
       setClaims((current) => [
         {
           id: `local-${offer.id}`,
@@ -535,7 +450,8 @@ const Saved = () => {
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Personalized picks</p>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">For you</h1>
         <p className="text-sm text-muted-foreground mt-1.5">
-          Filtered by your account preferences, then ranked by purchase history, claims, time patterns, and mood.
+          Claim-history picks use Groq + Tavily. When you choose a mood, we also surface extra live offers that fit that
+          vibe (in addition to your history-based list).
         </p>
       </section>
 
@@ -545,13 +461,13 @@ const Saved = () => {
             <i className="bi bi-stars" />
           </div>
           <div>
-            <p className="text-sm font-semibold">Hyperpersonalized feed</p>
+            <p className="text-sm font-semibold">Claim-history feed</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {preferredCategories.length > 0
-                ? `Showing ${preferredCategories.join(', ')} offers from your saved preferences${personalizationSummary.length > 0 ? ` · ${personalizationSummary.join(' · ')}` : ''}`
-                : personalizationSummary.length > 0
-                ? personalizationSummary.join(' · ')
-                : 'Learning from your local purchases, claims, ignored offers, and profile preferences.'}
+              {forYouInfo?.filterSource === 'groq' && 'Groq matches live offers to your past claims (Tavily adds city context). '}
+              {forYouInfo?.filterSource === 'heuristic' && 'Rule-based match to your claims (add GROQ_API_KEY for full AI). '}
+              {forYouInfo?.filterSource === 'none' && (forYouInfo?.message || 'Sign in and claim offers to unlock this feed. ')}
+              {forYouInfo?.tavilyUsed ? 'Tavily: on · ' : claims.length > 0 ? 'Tavily: optional · ' : ''}
+              {personalizationSummary.length > 0 ? personalizationSummary.join(' · ') : 'Your taste signals come from real claims, not just profile settings.'}
             </p>
           </div>
         </div>
@@ -665,60 +581,120 @@ const Saved = () => {
         <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
           Loading personalized offers...
         </div>
-      ) : specialOffers.length === 0 ? (
-        <div className="bg-card border border-border rounded-2xl p-6 xs:p-10 text-center">
-          <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center mx-auto mb-3">
-            <i className="bi bi-stars text-xl text-muted-foreground" />
-          </div>
-          <p className="font-medium">No special offers yet</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            {preferredCategories.length > 0
-              ? 'No live offers match your saved account preferences yet.'
-              : 'Pick a mood or claim a few offers so Localyse can learn your taste.'}
-          </p>
-        </div>
       ) : (
-        <section className="space-y-3">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Special offers for you</p>
-            <h2 className="text-lg font-semibold tracking-tight">
-              {selectedMoodMeta ? `${selectedMoodMeta.label} picks` : 'Analyzed picks'}
-            </h2>
-          </div>
-          {specialOffers.map(({ offer, score, reasons }) => {
-            const isMoodPick = Boolean(selectedMood && offer.id === moodPickId);
-            const fromMoodMatch = Boolean(selectedMood && (isMoodPick || hasMoodReason(reasons)));
-            const fromHistory = hasHistoryReason(reasons);
-
-            return (
-              <div key={offer.id} className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2 px-1">
-                  <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[10px] font-semibold text-primary">
-                    Match {Math.max(0, Math.round(score))}
-                  </span>
-                  {fromMoodMatch && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#fde7f3] px-2.5 py-1 text-[10px] font-semibold text-[#b35f88]">
-                      <i className="bi bi-magic" />
-                      Mood pick
-                    </span>
-                  )}
-                  {fromHistory && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
-                      <i className="bi bi-clock-history" />
-                      Based on your history
-                    </span>
-                  )}
-                  {(reasons.length > 0 ? reasons : ['Best available fit']).map((reason) => (
-                    <span key={reason} className="rounded-full bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground">
-                      {reason}
-                    </span>
-                  ))}
-                </div>
-                <OfferCard {...offer} onClaim={() => onClaimOffer(offer)} />
+        <>
+          {specialOffers.length > 0 && (
+            <section className="space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">From your claim history</p>
+                <h2 className="text-lg font-semibold tracking-tight">AI-matched picks</h2>
               </div>
-            );
-          })}
-        </section>
+              {specialOffers.map(({ offer, score, reasons }) => {
+                const isMoodPick = Boolean(selectedMood && offer.id === moodPickId);
+                const fromHistory = hasHistoryReason(reasons);
+
+                return (
+                  <div key={offer.id} className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 px-1">
+                      <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[10px] font-semibold text-primary">
+                        Match {Math.max(0, Math.round(score))}
+                      </span>
+                      {isMoodPick && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#fde7f3] px-2.5 py-1 text-[10px] font-semibold text-[#b35f88]">
+                          <i className="bi bi-magic" />
+                          Top mood pick
+                        </span>
+                      )}
+                      {fromHistory && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                          <i className="bi bi-clock-history" />
+                          Based on your history
+                        </span>
+                      )}
+                      {(reasons.length > 0 ? reasons : ['Best available fit']).map((reason) => (
+                        <span
+                          key={reason}
+                          className="rounded-full bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground"
+                        >
+                          {reason}
+                        </span>
+                      ))}
+                    </div>
+                    <OfferCard {...offer} onClaim={() => onClaimOffer(offer)} />
+                  </div>
+                );
+              })}
+            </section>
+          )}
+
+          {selectedMood && moodExtraOffers.length > 0 && (
+            <section className="space-y-3 mt-6">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Added for your mood</p>
+                <h2 className="text-lg font-semibold tracking-tight">
+                  {selectedMoodMeta ? `More ${selectedMoodMeta.label} ideas` : 'Mood picks'}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Extra live offers scored for this mood (not in your history-based list above).
+                </p>
+              </div>
+              {moodExtraOffers.map(({ offer, score, reasons, moodOnly }) => {
+                const isMoodPick = Boolean(offer.id === moodPickId);
+
+                return (
+                  <div key={`mood-${offer.id}`} className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 px-1">
+                      <span className="rounded-full bg-[#fde7f3] px-2.5 py-1 text-[10px] font-semibold text-[#b35f88]">
+                        Mood {Math.max(0, Math.round(score))}
+                      </span>
+                      {moodOnly && (
+                        <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                          Not in history set
+                        </span>
+                      )}
+                      {isMoodPick && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#fde7f3] px-2.5 py-1 text-[10px] font-semibold text-[#b35f88]">
+                          <i className="bi bi-magic" />
+                          Top mood pick
+                        </span>
+                      )}
+                      {reasons
+                        .filter((r) => !r.includes('Extra pick for your mood'))
+                        .map((reason) => (
+                          <span
+                            key={reason}
+                            className="rounded-full bg-secondary px-2.5 py-1 text-[10px] text-muted-foreground"
+                          >
+                            {reason}
+                          </span>
+                        ))}
+                    </div>
+                    <OfferCard {...offer} onClaim={() => onClaimOffer(offer)} />
+                  </div>
+                );
+              })}
+            </section>
+          )}
+
+          {!loading &&
+            specialOffers.length === 0 &&
+            (!selectedMood || moodExtraOffers.length === 0) && (
+              <div className="bg-card border border-border rounded-2xl p-6 xs:p-10 text-center">
+                <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center mx-auto mb-3">
+                  <i className="bi bi-stars text-xl text-muted-foreground" />
+                </div>
+                <p className="font-medium">No offers to show yet</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {forYouInfo?.message ||
+                    (claims.length === 0
+                      ? 'Claim a few offers on Home first—then For you shows deals aligned with that history.'
+                      : selectedMood
+                        ? 'No extra mood matches beyond your list, or turn off the mood to see only history picks.'
+                        : 'Nothing in the live pool matches your patterns yet. Check back soon.')}
+                </p>
+              </div>
+            )}
+        </>
       )}
     </div>
   );

@@ -4,8 +4,9 @@ const Wallet = require("../models/Wallet");
 const Transaction = require("../models/Transaction");
 const Offer = require("../models/Offer");
 const User = require("../models/User");
-const { getWeatherContext } = require("../services/weatherService");
-const { getContextInsights } = require("../services/tavilyService");
+const { getWeatherContext, getWeatherActionLines } = require("../services/weatherService");
+const { getContextInsights, getPriceBenchmarkInsight } = require("../services/tavilyService");
+const { APP_CURRENCY, formatPkr } = require("../utils/currency");
 const {
   CATEGORIES,
   calculateBudgetUsage,
@@ -13,6 +14,10 @@ const {
   getMonthBounds,
   rankOffersForBudgetState,
 } = require("../services/budgetIntelligenceService");
+const {
+  runWalletRecommendationsAI,
+  mergeWalletRecommendations,
+} = require("../services/walletRecommendationsAIService");
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -51,7 +56,7 @@ const getOrCreateWallet = async (userId) =>
       $setOnInsert: {
         user: userId,
         balance: 0,
-        currency: "USD",
+        currency: APP_CURRENCY,
         monthlyBudgets: normalizeBudgets(),
       },
     },
@@ -88,7 +93,7 @@ const transactionFromPayload = (payload, userId, source = "manual", uploadMeta =
   return {
     user: userId,
     amount: Number.isFinite(amount) && amount > 0 ? amount : 0,
-    currency: "USD",
+    currency: APP_CURRENCY,
     merchant,
     description,
     category,
@@ -250,7 +255,7 @@ const getRecommendations = async (req, res, next) => {
     const weatherLocation = queryLocation?.lat && queryLocation?.lng
       ? `${queryLocation.lat},${queryLocation.lng}`
       : "Islamabad";
-    const [offers, weather, context] = await Promise.all([
+    const [offers, weather, context, priceTavily] = await Promise.all([
       Offer.find({ expiresAt: { $gt: new Date() } })
         .populate("merchant", "name email location category")
         .sort({ createdAt: -1 })
@@ -258,11 +263,17 @@ const getRecommendations = async (req, res, next) => {
         .lean(),
       getWeatherContext(weatherLocation),
       getContextInsights(
-        `Budget-aware local spending recommendations for ${selectedCategory}; state ${categoryState.state}; budget used ${categoryState.percentUsed}%; safe daily limit $${categoryState.dailySafeLimit}.`
+        [
+          `Islamabad PKR wallet: category ${selectedCategory}, financial state ${categoryState.state}.`,
+          `Budget ${formatPkr(categoryState.budget)}, spent ${formatPkr(categoryState.spent)}, remaining ${formatPkr(categoryState.remaining)} (${categoryState.percentUsed}% used).`,
+          `Safe daily spend about ${formatPkr(categoryState.dailySafeLimit)}. Forecast: ${categoryState.forecast}`,
+          "Brief local demand or deal behavior for this category (one useful insight).",
+        ].join(" ")
       ),
+      getPriceBenchmarkInsight({ category: selectedCategory, city: "Islamabad" }),
     ]);
 
-    const recommendations = rankOffersForBudgetState({
+    const ranked = rankOffersForBudgetState({
       offers,
       budgetStates: usage,
       selectedCategory,
@@ -271,20 +282,46 @@ const getRecommendations = async (req, res, next) => {
       preferences: user?.preferences || [],
     });
 
+    const recentTransactions = transactions.slice(0, 10).map((t) => ({
+      amount: t.amount,
+      category: t.category,
+      merchant: t.merchant,
+    }));
+
+    const walletAI = await runWalletRecommendationsAI({
+      categoryState,
+      selectedCategory,
+      usage,
+      recommendations: ranked,
+      tavilyAnswer: context.source === "tavily" ? context.answer : "",
+      weatherSummary: weather.summary,
+      recentTransactions,
+    });
+
+    const { recommendations: recommendationsOut, aiAnalysis } = mergeWalletRecommendations(ranked, walletAI);
+
     res.json({
       user_state: categoryState.state,
       category: selectedCategory,
       budget_used: categoryState.percentUsed,
       daily_safe_limit: categoryState.dailySafeLimit,
       forecast: categoryState.forecast,
-      recommendations,
+      recommendations: recommendationsOut,
+      aiAnalysis,
       usage,
       context: {
-        currency: "USD",
+        currency: APP_CURRENCY,
         weather: weather.summary,
+        weatherActions: getWeatherActionLines(weather),
         insights: context.answer,
         signals: context.signals || [],
         source: context.source,
+        priceBenchmark: {
+          answer: priceTavily.answer,
+          query: priceTavily.query,
+          signals: priceTavily.signals || [],
+          source: priceTavily.source,
+        },
       },
     });
   } catch (error) {

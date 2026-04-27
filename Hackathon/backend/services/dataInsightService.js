@@ -152,6 +152,16 @@ const analyzeFinance = (rows) => {
     .filter((item) => item.revenue > 0 || item.profit !== 0)
     .sort((a, b) => a.profit - b.profit)
     .slice(0, 5);
+  const topRevenueProducts = [...products]
+    .filter((item) => item.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 8)
+    .map((item) => ({
+      product: item.product,
+      revenue: item.revenue,
+      profit: item.profit,
+      shareOfRevenue: totalRevenue > 0 ? item.revenue / totalRevenue : 0,
+    }));
   const topSellers = Array.from(topSellerCounts.entries())
     .map(([product, daysAsTopSeller]) => ({ product, daysAsTopSeller }))
     .sort((a, b) => b.daysAsTopSeller - a.daysAsTopSeller)
@@ -171,6 +181,45 @@ const analyzeFinance = (rows) => {
     slowDays,
     peakDays,
     underperformingProducts,
+    topRevenueProducts,
+  };
+};
+
+/**
+ * Pandas-style rollups in JS: concentration, spread, and pressure scores for LLM + dashboards.
+ */
+const computeAnalyticalHighlights = (summary) => {
+  const f = summary.finance;
+  const m = summary.margins;
+  const inv = summary.inventory;
+  const margins = (m.products || []).map((p) => p.margin).filter((x) => Number.isFinite(x));
+  const peakCust = f.peakDays?.length
+    ? Math.max(...f.peakDays.map((d) => d.customers || 0))
+    : 0;
+  const slowCust = f.slowDays?.length
+    ? Math.min(...f.slowDays.map((d) => d.customers || 0))
+    : 0;
+  const daySpread = f.peakDays?.length && f.slowDays?.length ? peakCust - slowCust : 0;
+  const top3Share = (f.topRevenueProducts || [])
+    .slice(0, 3)
+    .reduce((s, p) => s + (p.shareOfRevenue || 0), 0);
+  const marginSpread =
+    margins.length > 0 ? Math.max(...margins) - Math.min(...margins) : 0;
+  const invPressureCount =
+    (inv.priorityActionItems?.length || 0) +
+    (inv.overstockedItems?.length || 0) +
+    (inv.expiringSoon?.length || 0);
+  return {
+    top3RevenueConcentration: Math.round((top3Share || 0) * 1000) / 1000,
+    marginSpread: Math.round((marginSpread || 0) * 1000) / 1000,
+    dayTrafficSpread: daySpread,
+    inventoryPressureScore: invPressureCount,
+    inventoryValuePkr: Math.round(inv.totalInventoryValue || 0),
+    skusParsed: {
+      financeRows: f.rowsParsed,
+      marginRows: m.rowsParsed,
+      inventoryRows: inv.rowsParsed,
+    },
   };
 };
 
@@ -292,7 +341,7 @@ const summarizeUploadedData = (files = {}) => {
     financeInsights.underperformingProducts
   );
 
-  return {
+  const bundle = {
     finance: financeInsights,
     margins: marginInsights,
     inventory: inventoryInsights,
@@ -302,8 +351,14 @@ const summarizeUploadedData = (files = {}) => {
       marginFileName: files.marginFile?.[0]?.originalname,
     },
   };
+  return {
+    ...bundle,
+    analyticalHighlights: computeAnalyticalHighlights(bundle),
+  };
 };
 
 module.exports = {
   summarizeUploadedData,
+  computeAnalyticalHighlights,
+  readRows,
 };

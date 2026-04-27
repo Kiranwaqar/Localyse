@@ -56,7 +56,31 @@ const RoleSelect = () => {
                 <i className={`bi ${r.icon} text-xl`} />
               </div>
               <h3 className="text-lg font-semibold mb-1.5 tracking-tight">{r.title}</h3>
-              <p className="text-sm text-muted-foreground mb-6 leading-relaxed">{r.desc}</p>
+              <p className="text-sm text-muted-foreground mb-4 leading-relaxed">{r.desc}</p>
+              {r.id === 'merchant' && (
+                <p className="text-[11px] text-muted-foreground mb-2">
+                  New merchant?{' '}
+                  <span
+                    role="link"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate('/merchant-apply');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        navigate('/merchant-apply');
+                      }
+                    }}
+                    className="text-primary font-medium hover:underline cursor-pointer"
+                  >
+                    Request access
+                  </span>{' '}
+                  first.
+                </p>
+              )}
               <span className="text-sm font-medium text-primary inline-flex items-center gap-1.5">
                 Continue
                 <i className="bi bi-arrow-right transition-transform group-hover:translate-x-0.5" />

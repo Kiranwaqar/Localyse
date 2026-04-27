@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const userRoutes = require("./routes/userRoutes");
+const authRoutes = require("./routes/authRoutes");
 const merchantRoutes = require("./routes/merchantRoutes");
 const offerRoutes = require("./routes/offerRoutes");
 const walletRoutes = require("./routes/walletRoutes");
@@ -21,6 +22,7 @@ app.get("/", (_req, res) => {
     endpoints: {
       health: "/api/health",
       users: "/api/users",
+      auth: "POST /api/auth/google, /verify-email, /resend-verification",
       merchants: "/api/merchants",
       offers: "/api/offers",
       wallet: "/api/wallet",
@@ -38,6 +40,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/users", userRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/merchants", merchantRoutes);
 app.use("/api/offers", offerRoutes);
 app.use("/api/wallet", walletRoutes);

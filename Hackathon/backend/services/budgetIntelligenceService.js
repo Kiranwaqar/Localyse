@@ -1,3 +1,5 @@
+const { formatPkr } = require("../utils/currency");
+
 const CATEGORIES = ["food", "transport", "shopping", "entertainment", "bills", "savings"];
 
 const normalizeText = (value) => String(value || "").trim().toLowerCase();
@@ -160,14 +162,14 @@ const simulateOfferImpact = (offer, categoryState) => {
   if (remainingAfterOffer >= 0) {
     return {
       impact: "Keeps you within budget",
-      simulation: `If you take this offer, you will remain within budget with $${roundMoney(remainingAfterOffer)} left for ${categoryState.category}.`,
+      simulation: `If you take this offer, you will remain within budget with ${formatPkr(remainingAfterOffer)} left for ${categoryState.category}.`,
       overBy: 0,
     };
   }
 
   return {
-    impact: `May exceed budget by $${roundMoney(overBy)}`,
-    simulation: `If you take this offer, your ${categoryState.category} budget may go over by $${roundMoney(overBy)}.`,
+    impact: `May exceed budget by ${formatPkr(overBy)}`,
+    simulation: `If you take this offer, your ${categoryState.category} budget may go over by ${formatPkr(overBy)}.`,
     overBy: roundMoney(overBy),
   };
 };
@@ -193,7 +195,7 @@ const getSuitability = ({ categoryState, pricing, discount }) => {
     return {
       suitable: false,
       label: "Over budget",
-      reason: `This costs $${pricing.price}, but you only have $${categoryState.remaining} left in ${categoryState.category}.`,
+      reason: `This costs ${formatPkr(pricing.price)}, but you only have ${formatPkr(categoryState.remaining)} left in ${categoryState.category}.`,
     };
   }
 
@@ -205,8 +207,10 @@ const getSuitability = ({ categoryState, pricing, discount }) => {
       suitable: fitsDailyLimit && isStrongDiscount,
       label: fitsDailyLimit && isStrongDiscount ? "Emergency value pick" : "Too risky right now",
       reason: fitsDailyLimit && isStrongDiscount
-        ? `Fits your $${categoryState.dailySafeLimit} daily safe limit and gives a strong ${discount}% discount.`
-        : `Because ${categoryState.category} is overspending, only low-cost offers under $${categoryState.dailySafeLimit} with 25%+ off are recommended.`,
+        ? `Fits your ${formatPkr(categoryState.dailySafeLimit)} daily safe limit and gives a strong ${discount}% discount.`
+        : `Because ${categoryState.category} is overspending, only low-cost offers under ${formatPkr(
+            categoryState.dailySafeLimit
+          )} with 25%+ off are recommended.`,
     };
   }
 
@@ -217,7 +221,7 @@ const getSuitability = ({ categoryState, pricing, discount }) => {
       suitable,
       label: suitable ? "Safe budget pick" : "Would slow your recovery",
       reason: suitable
-        ? `Keeps spending close to your safe pace with $${categoryState.remaining} left.`
+        ? `Keeps spending close to your safe pace with ${formatPkr(categoryState.remaining)} left.`
         : `This is affordable, but too large for your current safe pace in ${categoryState.category}.`,
     };
   }
@@ -226,14 +230,14 @@ const getSuitability = ({ categoryState, pricing, discount }) => {
     return {
       suitable: true,
       label: "Unlocked by spare budget",
-      reason: `You have $${categoryState.remaining} left, so this category can support a better-value experience.`,
+      reason: `You have ${formatPkr(categoryState.remaining)} left, so this category can support a better-value experience.`,
     };
   }
 
   return {
     suitable: true,
     label: "Budget fit",
-    reason: `Fits within your $${categoryState.remaining} remaining ${categoryState.category} budget.`,
+    reason: `Fits within your ${formatPkr(categoryState.remaining)} remaining ${categoryState.category} budget.`,
   };
 };
 
@@ -304,9 +308,11 @@ const rankOffersForBudgetState = ({
       reason: `${getStateRecommendationRules(categoryState.state)} ${suitability.reason}`,
       impact: simulation.impact,
       simulation: simulation.simulation,
-      savings: `$${pricing.savings}`,
+      savings: formatPkr(pricing.savings),
       urgency: categoryState.state === "overspending" ? "high" : categoryState.state === "at_risk" ? "medium" : "low",
-      explanation: `Shown because your ${categoryState.category} budget has $${categoryState.remaining} left, is ${categoryState.percentUsed}% used, and your safe daily limit is $${categoryState.dailySafeLimit}.`,
+      explanation: `Shown because your ${categoryState.category} budget has ${formatPkr(
+        categoryState.remaining
+      )} left, is ${categoryState.percentUsed}% used, and your safe daily limit is ${formatPkr(categoryState.dailySafeLimit)}.`,
     }));
 };
 

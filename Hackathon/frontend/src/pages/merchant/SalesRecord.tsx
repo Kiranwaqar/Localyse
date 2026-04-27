@@ -11,7 +11,7 @@ const SalesRecord = () => {
   };
 
   return (
-    <div className="w-full max-w-6xl p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
+    <div className="w-full max-w-6xl xl:max-w-7xl mx-auto p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
       <header className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Sales record</p>

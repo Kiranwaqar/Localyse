@@ -11,6 +11,7 @@ import type {
   WalletRecommendationsResponse,
   WalletResponse,
 } from '@/lib/domain';
+import { formatPkr } from '@/lib/currency';
 import { toast } from 'sonner';
 
 const categories: { id: WalletCategory; label: string; icon: string }[] = [
@@ -27,7 +28,7 @@ const emptyBudgets = categories.reduce(
   {} as Record<WalletCategory, number>
 );
 
-const money = (value: number) => `$${Number(value || 0).toFixed(2)}`;
+const money = (value: number) => formatPkr(Number(value || 0));
 
 const stateCopy: Record<string, { label: string; color: string }> = {
   overspending: { label: 'Overspending', color: 'text-destructive bg-destructive/10' },
@@ -44,6 +45,12 @@ const RecommendationCard = ({ recommendation }: { recommendation: BudgetRecommen
           {recommendation.merchantName || 'Localyse pick'}
         </p>
         <h3 className="text-sm font-semibold mt-1">{recommendation.title}</h3>
+        {recommendation.ai_insight && (
+          <p className="text-[11px] font-semibold text-primary mt-1.5">
+            <i className="bi bi-stars mr-1" />
+            AI budget match
+          </p>
+        )}
       </div>
       <span className="rounded-full bg-primary/10 text-primary px-2.5 py-1 text-[11px] font-semibold capitalize">
         {recommendation.suitability || recommendation.urgency}
@@ -163,7 +170,7 @@ const Wallet = () => {
         monthlyBudgets: budgets,
       });
       setWalletData(data);
-      toast.success('Wallet updated', { description: 'Your USD balance and budgets were saved.' });
+      toast.success('Wallet updated', { description: 'Your PKR balance and budgets were saved.' });
       await loadRecommendations();
     } catch (err) {
       toast.error('Save failed', {
@@ -182,7 +189,7 @@ const Wallet = () => {
           Your financial-aware city guide
         </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Track USD budgets and see offers that explain their budget impact before you act.
+          Track PKR budgets and see offers that explain their budget impact before you act.
         </p>
       </section>
 
@@ -203,7 +210,7 @@ const Wallet = () => {
         <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">Balance and monthly budgets</h2>
-            <p className="text-xs text-muted-foreground mt-1">All calculations use USD.</p>
+            <p className="text-xs text-muted-foreground mt-1">All amounts are in Pakistani Rupees (PKR).</p>
           </div>
           <button
             onClick={saveWallet}
@@ -289,7 +296,7 @@ const Wallet = () => {
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">Smart recommendations</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Offers are filtered by the selected category's remaining budget and safe spending pace.
+              Budget rules pre-filter offers; Groq then explains fit using your limits, recent spend, Tavily, and weather.
             </p>
           </div>
           <select
@@ -322,6 +329,25 @@ const Wallet = () => {
           </div>
         )}
 
+        {recommendations?.aiAnalysis?.summary ? (
+          <div className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-xs">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">AI wallet read</p>
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
+                {recommendations.aiAnalysis.source === 'groq' ? 'Groq' : 'Guided rules'}
+              </span>
+            </div>
+            <p className="text-sm text-foreground leading-relaxed">{recommendations.aiAnalysis.summary}</p>
+            {recommendations.aiAnalysis.tips && recommendations.aiAnalysis.tips.length > 0 && (
+              <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4">
+                {recommendations.aiAnalysis.tips.map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
         {recommendations && (
           <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Advisor state</p>
@@ -330,7 +356,46 @@ const Wallet = () => {
             </p>
             <p className="text-xs text-muted-foreground mt-1">{recommendations.forecast}</p>
             {recommendations.context?.weather && (
-              <p className="text-[11px] text-muted-foreground mt-2">Weather context: {recommendations.context.weather}</p>
+              <p className="text-[11px] text-muted-foreground mt-2">Weather: {recommendations.context.weather}</p>
+            )}
+            {recommendations.context?.weatherActions && recommendations.context.weatherActions.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">What to do now</p>
+                {recommendations.context.weatherActions.map((line) => (
+                  <p key={line} className="text-xs text-foreground leading-relaxed">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {recommendations.context?.priceBenchmark?.answer &&
+              !/unavailable|no direct answer/i.test(recommendations.context.priceBenchmark.answer) && (
+                <div className="mt-3 rounded-xl border border-border bg-background/60 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Reference price bands (web search, PKR)
+                  </p>
+                  <p className="text-xs text-foreground leading-relaxed mt-1.5">
+                    {recommendations.context.priceBenchmark.answer}
+                  </p>
+                  {recommendations.context.priceBenchmark.signals && recommendations.context.priceBenchmark.signals.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-[11px] text-muted-foreground list-disc pl-4">
+                      {recommendations.context.priceBenchmark.signals.slice(0, 2).map((s, i) => (
+                        <li key={`${i}-${s.slice(0, 24)}`}>{s.length > 120 ? `${s.slice(0, 117)}…` : s}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    Cross-checks your category spend against typical Islamabad / Pakistan ranges from Tavily. Localyse
+                    offer card prices are still merchant-specific.
+                  </p>
+                </div>
+              )}
+
+            {recommendations.context?.insights && recommendations.context.source === 'tavily' && (
+              <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed line-clamp-3">
+                Web context: {recommendations.context.insights}
+              </p>
             )}
           </div>
         )}

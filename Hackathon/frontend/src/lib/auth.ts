@@ -8,6 +8,7 @@ export interface Session {
   role: Role;
   name?: string;
   category?: string;
+  emailVerified?: boolean;
   location?: {
     lat?: number;
     lng?: number;
@@ -15,6 +16,12 @@ export interface Session {
   };
   preferences?: string[];
 }
+
+export type SignupResult = Session & {
+  requiresEmailVerification?: boolean;
+  message?: string;
+  devVerificationPath?: string;
+};
 
 export const getSession = (): Session | null => {
   try {

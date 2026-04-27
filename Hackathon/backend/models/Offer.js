@@ -82,6 +82,8 @@ const offerSchema = new mongoose.Schema(
       inventoryInsights: mongoose.Schema.Types.Mixed,
       uploadedFiles: mongoose.Schema.Types.Mixed,
       tavilyAnswer: String,
+      customerCharmLine: String,
+      customerCharmSubtext: String,
       source: {
         type: String,
         default: "localyse-engine",

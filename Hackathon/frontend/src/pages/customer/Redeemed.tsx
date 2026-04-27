@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getCustomerCouponClaims } from '@/lib/api';
 import { getSession } from '@/lib/auth';
 import type { CouponClaim, CouponClaimsResponse } from '@/lib/domain';
+import { formatPkr } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -16,12 +17,7 @@ const formatDateTime = (value?: string | null) => {
   }).format(new Date(value));
 };
 
-const formatDollars = (value: number) =>
-  new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-  }).format(value || 0);
+const formatPkrAmount = (value: number) => formatPkr(value || 0);
 
 const getSavingsEstimate = (claim: CouponClaim) => {
   const estimatedOriginalValue = Number(claim.estimatedRevenue || 0);
@@ -75,10 +71,10 @@ const Redeemed = () => {
           <i className="bi bi-graph-up-arrow text-success" /> Lifetime savings
         </div>
         <p className="text-2xl xs:text-3xl sm:text-4xl font-semibold tracking-tight break-words">
-          <span className="tabular-nums">{formatDollars(lifetimeSavings)}</span>
+          <span className="tabular-nums">{formatPkrAmount(lifetimeSavings)}</span>
         </p>
         <p className="text-xs text-muted-foreground mt-1.5">
-          Based on redeemed offer discounts from your dollar finance data. {redeemed.length} redeemed, {history?.summary.pendingClaims || 0} waiting to redeem
+          Based on redeemed offer discounts from your finance data (PKR). {redeemed.length} redeemed, {history?.summary.pendingClaims || 0} waiting to redeem
         </p>
       </div>
 
@@ -118,7 +114,7 @@ const Redeemed = () => {
                 <Metric label="Discount" value={`${claim.discountPercentage || 0}%`} />
                 <Metric
                   label={claim.status === 'redeemed' ? 'Saved' : 'Potential save'}
-                  value={formatDollars(getSavingsEstimate(claim))}
+                  value={formatPkrAmount(getSavingsEstimate(claim))}
                 />
               </div>
               <div className="mt-3 grid grid-cols-1 xs:grid-cols-2 gap-2 text-xs text-muted-foreground">

@@ -6,6 +6,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Landing from "./pages/Landing";
 import RoleSelect from "./pages/RoleSelect";
 import Auth from "./pages/Auth";
+import MerchantApply from "./pages/MerchantApply";
+import VerifyEmail from "./pages/VerifyEmail";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 
 import CustomerLayout from "./pages/customer/CustomerLayout";
@@ -35,6 +39,10 @@ const App = () => (
           <Route path="/" element={<Landing />} />
           <Route path="/start" element={<RoleSelect />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/merchant-apply" element={<MerchantApply />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           <Route path="/app" element={<CustomerLayout />}>
             <Route index element={<Home />} />

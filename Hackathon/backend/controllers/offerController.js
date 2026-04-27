@@ -7,8 +7,16 @@ const Wallet = require("../models/Wallet");
 const mongoose = require("mongoose");
 const { summarizeUploadedData } = require("../services/dataInsightService");
 const { sendBudgetAlignedOfferEmail, sendCouponNotifications } = require("../services/emailService");
-const { getContextInsights } = require("../services/tavilyService");
+const { getContextInsights, buildCustomerCharmFromInsights } = require("../services/tavilyService");
+const { runPipelineAnalysis } = require("../services/groqAnalysisService");
+const {
+  buildClaimSummary,
+  compactOffers,
+  runForYouGroqMatch,
+  heuristicForYouMatch,
+} = require("../services/forYouMatchService");
 const { getWeatherContext } = require("../services/weatherService");
+const { formatPkr, APP_CURRENCY } = require("../utils/currency");
 const {
   calculateBudgetUsage,
   getMonthBounds,
@@ -248,18 +256,18 @@ const recordWalletImpactForClaim = async ({ claimRecord, offer, customerId, amou
   if (existingTransaction) {
     return {
       amount: existingTransaction.amount,
-      currency: "USD",
+      currency: APP_CURRENCY,
       category: existingTransaction.category,
       transactionId: existingTransaction._id,
       alreadyRecorded: true,
-      message: `$${roundMoney(existingTransaction.amount)} was already deducted from the customer's ${existingTransaction.category} budget.`,
+      message: `${formatPkr(roundMoney(existingTransaction.amount))} was already deducted from the customer's ${existingTransaction.category} budget.`,
     };
   }
 
   const transaction = await Transaction.create({
     user: customerId,
     amount: walletAmount,
-    currency: "USD",
+    currency: APP_CURRENCY,
     merchant: offer.merchantName,
     description: `Redeemed offer: ${offer.targetItem || offer.offerText}`,
     category,
@@ -282,11 +290,11 @@ const recordWalletImpactForClaim = async ({ claimRecord, offer, customerId, amou
 
   return {
     amount: walletAmount,
-    currency: "USD",
+    currency: APP_CURRENCY,
     category,
     transactionId: transaction._id,
     alreadyRecorded: false,
-    message: `$${walletAmount} deducted from the customer's ${category} budget.`,
+    message: `${formatPkr(walletAmount)} deducted from the customer's ${category} budget.`,
   };
 };
 
@@ -335,7 +343,7 @@ const notifyBudgetAlignedCustomers = async (offer) => {
         originalPrice: pricing.originalPrice,
         savings: pricing.savings,
         remainingBudget: categoryState.remaining,
-        reason: `Taking it would leave about $${roundMoney(categoryState.remaining - pricing.price)} in your ${category} budget.`,
+        reason: `Taking it would leave about ${formatPkr(roundMoney(categoryState.remaining - pricing.price))} in your ${category} budget.`,
       });
 
       return { user: user.email, result };
@@ -403,16 +411,21 @@ const buildCustomerOfferText = ({ goal, merchantName, focusItem, discountPercent
   return `${selected}. First ${expectedCustomerVolume} customers only.`;
 };
 
-const buildAiSuggestion = ({ contextInsights, copy, expectedCustomerVolume, expectedBusinessImpact }) => {
+const buildAiSuggestion = ({ contextInsights, copy, expectedCustomerVolume, expectedBusinessImpact, groqLayer }) => {
   const answer = String(contextInsights.answer || "").replace(/\s+/g, " ").trim();
   const localDecision = `Recommended offer: ${copy.offerText} ${expectedBusinessImpact}`;
 
+  const syn =
+    groqLayer?.source === "groq" && String(groqLayer.aiNarrative || "").trim()
+      ? ` Synthesis: ${String(groqLayer.aiNarrative).replace(/\s+/g, " ").trim().slice(0, 480)}`
+      : "";
+
   if (contextInsights.source === "tavily" && answer && !answer.includes("No direct answer")) {
     const aiContext = answer.length > 120 ? `${answer.slice(0, 117)}...` : answer;
-    return `${localDecision} AI context: ${aiContext}`;
+    return `${localDecision}${syn} Web context: ${aiContext}`;
   }
 
-  return localDecision;
+  return syn ? `${localDecision}${syn}` : localDecision;
 };
 
 const buildOfferCopy = ({
@@ -537,6 +550,46 @@ const generateOffers = async (req, res, next) => {
       contextInsights,
       insights: uploadedInsights,
     });
+    const groqLayer = await runPipelineAnalysis({
+      merchantName: merchant.name,
+      category,
+      goal,
+      focusItem,
+      weather: weatherContext.summary,
+      dayPart,
+      safeDiscountCeiling,
+      activeForHours,
+      location,
+      analyticalHighlights: uploadedInsights.analyticalHighlights,
+      financeSlice: {
+        rowsParsed: uploadedInsights.finance.rowsParsed,
+        totalRevenue: uploadedInsights.finance.totalRevenue,
+        profitMargin: uploadedInsights.finance.profitMargin,
+        topRevenueProducts: (uploadedInsights.finance.topRevenueProducts || []).slice(0, 4),
+        peakDays: uploadedInsights.finance.peakDays,
+        slowDays: uploadedInsights.finance.slowDays,
+      },
+      marginsSlice: {
+        rowsParsed: uploadedInsights.margins.rowsParsed,
+        averageMargin: uploadedInsights.margins.averageMargin,
+        safestProducts: (uploadedInsights.margins.safestProducts || []).slice(0, 4),
+      },
+      inventorySlice: {
+        priorityActionItems: uploadedInsights.inventory.priorityActionItems,
+        overstockedItems: uploadedInsights.inventory.overstockedItems,
+        expiringSoon: uploadedInsights.inventory.expiringSoon,
+        totalInventoryValue: uploadedInsights.inventory.totalInventoryValue,
+      },
+      tavily: contextInsights,
+    });
+    const copyWithReason = (() => {
+      const extra = String(groqLayer?.reasonWhyNowAugment || "").trim();
+      if (!extra) return copy;
+      return {
+        ...copy,
+        reasonWhyNow: `${copy.reasonWhyNow} ${extra}`.replace(/\s+/g, " ").trim().slice(0, 2000),
+      };
+    })();
     const expectedCustomerVolume = estimateCustomerVolume({
       goal,
       activeForHours,
@@ -552,16 +605,25 @@ const generateOffers = async (req, res, next) => {
     const finalOfferText = buildCustomerOfferText({
       goal,
       merchantName: merchant.name,
-      focusItem: copy.targetItem,
-      discountPercentage: copy.discountPercentage,
+      focusItem: copyWithReason.targetItem,
+      discountPercentage: copyWithReason.discountPercentage,
       expectedCustomerVolume,
     });
-    const finalCopy = { ...copy, offerText: finalOfferText };
+    const finalCopy = { ...copyWithReason, offerText: finalOfferText };
     const aiSuggestion = buildAiSuggestion({
       contextInsights,
       copy: finalCopy,
       expectedCustomerVolume,
       expectedBusinessImpact,
+      groqLayer,
+    });
+    const { charmLine, charmSubtext } = buildCustomerCharmFromInsights({
+      answer: contextInsights.answer,
+      signals: contextInsights.signals,
+      source: contextInsights.source,
+      focusItem: finalCopy.targetItem,
+      merchantName: merchant.name,
+      goal,
     });
     const storedOffer = await Offer.create({
       merchant: merchant._id,
@@ -585,6 +647,16 @@ const generateOffers = async (req, res, next) => {
         inventoryInsights: uploadedInsights.inventory,
         uploadedFiles: uploadedInsights.files,
         tavilyAnswer: contextInsights.answer,
+        customerCharmLine: charmLine,
+        customerCharmSubtext: charmSubtext,
+        analyticalHighlights: uploadedInsights.analyticalHighlights,
+        groqAnalysis: {
+          source: groqLayer.source,
+          aiNarrative: groqLayer.aiNarrative,
+          riskCheck: groqLayer.riskCheck,
+          dataHighlights: groqLayer.dataHighlights,
+          error: groqLayer.error,
+        },
       },
     });
 
@@ -597,6 +669,8 @@ const generateOffers = async (req, res, next) => {
         source: contextInsights.source,
         answer: contextInsights.answer,
         signals: contextInsights.signals,
+        groq: groqLayer.source === "groq" ? { narrative: groqLayer.aiNarrative, dataHighlights: groqLayer.dataHighlights, riskCheck: groqLayer.riskCheck } : { source: groqLayer.source, error: groqLayer.error },
+        analyticalHighlights: uploadedInsights.analyticalHighlights,
       },
       count: 1,
       offers: [storedOffer],
@@ -614,6 +688,121 @@ const getOffers = async (_req, res, next) => {
       .limit(50);
 
     return res.json(offers);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getForYouOffers = async (req, res, next) => {
+  try {
+    const customerId = String(req.query.customerId || "").trim();
+    const customerEmail = normalizeText(req.query.customerEmail);
+    const filters = [];
+
+    if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+      filters.push({ customer: customerId });
+    }
+    if (customerEmail) {
+      filters.push({ customerEmail });
+    }
+    if (filters.length === 0) {
+      return res.status(400).json({ message: "customerId or customerEmail is required." });
+    }
+
+    const [customer, claims, offers] = await Promise.all([
+      customerId && mongoose.Types.ObjectId.isValid(customerId)
+        ? User.findById(customerId).select("name email preferences").lean()
+        : User.findOne({ email: customerEmail }).select("name email preferences").lean(),
+      OfferClaim.find({ $or: filters }).sort({ claimedAt: -1 }).limit(80).lean(),
+      Offer.find({ expiresAt: { $gt: new Date() } })
+        .populate("merchant", "name email location category")
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+    ]);
+
+    if (!claims.length) {
+      return res.json({
+        filterSource: "none",
+        message: "Claim a few offers from the home feed so Localyse can match live deals to your claim history.",
+        items: [],
+        tavilyUsed: false,
+      });
+    }
+
+    const claimedOfferIds = new Set(
+      claims.map((c) => String(c.offer?._id || c.offer || "").trim()).filter(Boolean)
+    );
+    const unclaimedLive = offers.filter((o) => !claimedOfferIds.has(String(o._id)));
+
+    if (!unclaimedLive.length) {
+      return res.json({
+        filterSource: "none",
+        message: "No new live offers to compare to your history right now.",
+        items: [],
+        tavilyUsed: false,
+      });
+    }
+
+    const claimSummary = buildClaimSummary(claims);
+    const offersCompact = compactOffers(unclaimedLive);
+
+    const tavilyQuery = [
+      "Islamabad local food and retail demand one sentence for personalization.",
+      `Customer claim categories: ${claimSummary.topCategories.map((c) => c.name).join(", ")}.`,
+      `Frequent merchants: ${claimSummary.topMerchants.map((m) => m.name).slice(0, 3).join(", ")}.`,
+    ].join(" ");
+
+    const tavily = await getContextInsights(tavilyQuery);
+
+    const groqResult = await runForYouGroqMatch({
+      customerName: customer?.name,
+      claimSummary,
+      offersCompact,
+      tavilyAnswer: tavily.source === "tavily" ? tavily.answer : "",
+    });
+
+    let matchRows = Array.isArray(groqResult.matches) ? groqResult.matches : [];
+    let filterSource = "groq";
+
+    if (matchRows.length === 0) {
+      matchRows = heuristicForYouMatch(claims, unclaimedLive).map((m) => ({
+        offerId: m.offerId,
+        fitScore: m.fitScore,
+        reason: m.reason,
+      }));
+      filterSource = groqResult.source === "groq" ? "heuristic" : "heuristic";
+    }
+
+    if (matchRows.length === 0) {
+      return res.json({
+        filterSource: "empty",
+        message: "No live offers closely match your claim patterns yet. Check back as new offers go live.",
+        items: [],
+        tavilyUsed: tavily.source === "tavily",
+        claimSummary,
+      });
+    }
+
+    const byId = new Map(unclaimedLive.map((o) => [String(o._id), o]));
+    const items = matchRows
+      .map((m) => {
+        const offer = byId.get(String(m.offerId));
+        if (!offer) return null;
+        return {
+          offer,
+          fitScore: m.fitScore,
+          reason: m.reason,
+        };
+      })
+      .filter(Boolean);
+
+    return res.json({
+      filterSource,
+      items,
+      tavilyUsed: tavily.source === "tavily",
+      claimSummary,
+    });
   } catch (error) {
     return next(error);
   }
@@ -860,6 +1049,38 @@ const syncLegacyClaimsForMerchant = async (merchantId) => {
   }
 };
 
+const getAverageBaselinePerCustomer = (offers) => {
+  const values = (offers || [])
+    .map((o) => Number(o.metadata?.financeInsights?.averagePerCustomer || 0))
+    .filter((n) => n > 0);
+  if (values.length === 0) {
+    return 0;
+  }
+  return values.reduce((a, b) => a + b, 0) / values.length;
+};
+
+const getRedeemedRevenueForClaim = (claim, offerById) => {
+  const setAtRedeem = Number(claim.redeemAmount);
+  if (Number.isFinite(setAtRedeem) && setAtRedeem > 0) {
+    return setAtRedeem;
+  }
+  const offer = offerById.get(String(claim.offer));
+  if (!offer) {
+    return 0;
+  }
+  return getOfferPricing(offer).price;
+};
+
+const buildOfferMapForAnalytics = async (offers, redeemedClaims) => {
+  const byId = new Map(offers.map((o) => [String(o._id), o]));
+  const missing = [...new Set(redeemedClaims.map((c) => String(c.offer)).filter((id) => !byId.has(id)))];
+  if (missing.length) {
+    const extra = await Offer.find({ _id: { $in: missing } }).lean();
+    extra.forEach((o) => byId.set(String(o._id), o));
+  }
+  return byId;
+};
+
 const getOfferAnalytics = async (req, res, next) => {
   try {
     const merchantId = String(req.query.merchantId || "").trim();
@@ -871,6 +1092,10 @@ const getOfferAnalytics = async (req, res, next) => {
       }
 
       query.merchant = merchantId;
+    }
+
+    if (merchantId) {
+      await syncLegacyClaimsForMerchant(merchantId);
     }
 
     const offers = await Offer.find(query).sort({ createdAt: -1 }).lean();
@@ -896,14 +1121,6 @@ const getOfferAnalytics = async (req, res, next) => {
         expiredAt: offer.expiresAt,
         aiReason: getExpiredUnclaimedReason(offer),
       }));
-    const revenueAttributed = offers.reduce((sum, offer) => {
-      const claimRevenue = (offer.claims || []).reduce(
-        (claimSum, claim) => claimSum + Number(claim.estimatedRevenue || estimateRevenuePerClaim(offer)),
-        0
-      );
-
-      return sum + claimRevenue;
-    }, 0);
     const baselineValues = offers
       .map((offer) => {
         const finance = offer.metadata?.financeInsights || {};
@@ -913,6 +1130,31 @@ const getOfferAnalytics = async (req, res, next) => {
       .filter((value) => value > 0);
     const baselineDayRevenue = average(baselineValues);
 
+    const redeemFilter = {
+      $or: [{ status: "redeemed" }, { redeemedAt: { $exists: true, $ne: null } }],
+    };
+    if (merchantId) {
+      redeemFilter.merchant = new mongoose.Types.ObjectId(merchantId);
+    }
+    const redeemedClaims = await OfferClaim.find(redeemFilter).lean();
+    const offerById = await buildOfferMapForAnalytics(offers, redeemedClaims);
+    const revenueFromRedemptions = redeemedClaims.reduce(
+      (sum, c) => sum + getRedeemedRevenueForClaim(c, offerById),
+      0
+    );
+    const revenueByOfferId = new Map();
+    redeemedClaims.forEach((c) => {
+      const id = String(c.offer);
+      const add = getRedeemedRevenueForClaim(c, offerById);
+      revenueByOfferId.set(id, (revenueByOfferId.get(id) || 0) + add);
+    });
+    const baselineAov = getAverageBaselinePerCustomer(offers);
+    const redeemCount = redeemedClaims.length;
+    const counterfactualRevenue = baselineAov * redeemCount;
+    const revenueAttributed = revenueFromRedemptions;
+    const hasBaselineForUplift = baselineAov > 0;
+    const estimatedUplift = hasBaselineForUplift ? revenueAttributed - counterfactualRevenue : 0;
+
     return res.json({
       summary: {
         publishedCount,
@@ -921,8 +1163,15 @@ const getOfferAnalytics = async (req, res, next) => {
         averageTimeToClaimMinutes,
         expiredUnclaimedCount: expiredUnclaimed.length,
         revenueAttributed: Math.round(revenueAttributed),
+        /** Mean daily revenue from uploaded finance (total ÷ day rows) — reference only. */
         baselineDayRevenue: Math.round(baselineDayRevenue),
-        estimatedUplift: Math.round(revenueAttributed - baselineDayRevenue),
+        /** Average $ per customer from uploaded finance (for uplift counterfactual). */
+        baselineAveragePerCustomer: Math.round(baselineAov * 100) / 100,
+        redeemCount,
+        counterfactualRevenue: Math.round(counterfactualRevenue),
+        /** (Actual paid on redemptions) − (redeem count × your finance average $/customer) when finance exists. */
+        estimatedUplift: Math.round(estimatedUplift),
+        upliftIsComparable: hasBaselineForUplift,
       },
       topOffer: topClaimedOffer
         ? {
@@ -939,12 +1188,7 @@ const getOfferAnalytics = async (req, res, next) => {
         merchantName: offer.merchantName,
         claimCount: offer.claimCount || 0,
         expectedCustomerVolume: offer.metadata?.expectedCustomerVolume || 0,
-        revenueAttributed: Math.round(
-          (offer.claims || []).reduce(
-            (sum, claim) => sum + Number(claim.estimatedRevenue || estimateRevenuePerClaim(offer)),
-            0
-          )
-        ),
+        revenueAttributed: Math.round(revenueByOfferId.get(String(offer._id)) || 0),
         createdAt: offer.createdAt,
         expiresAt: offer.expiresAt,
       })),
@@ -1292,9 +1536,14 @@ const redeemClaim = async (req, res, next) => {
     const wasRedeemed = claim.status === "redeemed" || Boolean(claim.redeemedAt);
     let walletImpact = null;
 
+    const offer = await Offer.findById(claim.offer);
+
     if (!wasRedeemed) {
+      const pricing = offer ? getOfferPricing(offer) : { price: 0, originalPrice: 0 };
       claim.status = "redeemed";
       claim.redeemedAt = new Date();
+      claim.redeemAmount = pricing.price;
+      claim.listPriceAtRedemption = pricing.originalPrice;
       await claim.save();
 
       await Offer.updateOne(
@@ -1307,18 +1556,18 @@ const redeemClaim = async (req, res, next) => {
       );
     }
 
-    const offer = await Offer.findById(claim.offer);
     const customerId = claim.customer || (claim.customerEmail
       ? (await User.findOne({ email: claim.customerEmail }).select("_id").lean())?._id
       : null);
 
     if (offer && customerId) {
       const pricing = getOfferPricing(offer);
+      const paid = Number(claim.redeemAmount) > 0 ? Number(claim.redeemAmount) : pricing.price;
       walletImpact = await recordWalletImpactForClaim({
         claimRecord: claim,
         offer,
         customerId,
-        amount: pricing.price || claim.estimatedRevenue,
+        amount: paid || claim.estimatedRevenue,
       });
     }
 
@@ -1364,6 +1613,7 @@ const deleteOffer = async (req, res, next) => {
 module.exports = {
   generateOffers,
   getOffers,
+  getForYouOffers,
   claimOffer,
   getOfferAnalytics,
   getMerchantClaims,

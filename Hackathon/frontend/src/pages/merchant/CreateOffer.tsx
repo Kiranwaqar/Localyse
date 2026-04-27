@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { MerchantAiRationaleBubble } from '@/components/MerchantAiRationaleBubble';
 import { OfferCard } from '@/components/OfferCard';
 import { Category } from '@/lib/domain';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { formatPkr } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { generateOffers, updateMerchant } from '@/lib/api';
 import { getSession, setSession } from '@/lib/auth';
@@ -14,7 +16,13 @@ const goals = [
   { id: 'newcust', label: 'Attract new customers', icon: 'bi-stars' },
 ];
 
-const DEFAULT_LOCATION = { lat: 33.6844, lng: 73.0479 };
+/** Map default & Geoapify regional filter center (rough ICT / Blue Area area). */
+const DEFAULT_LOCATION = { lat: 33.72, lng: 73.05 };
+/** Meters. ~50 km radius covers all Islamabad sectors, Margalla fringes, Tarnol–Bani Gala–Park Rd belt within ICT. */
+const ISLAMABAD_SEARCH_RADIUS_M = 50000;
+/** Geoapify `circle:lon,lat,radiusMeters` — full-city Islamabad only. */
+const ISLAMABAD_GEOAPIFY_FILTER = `circle:${DEFAULT_LOCATION.lng},${DEFAULT_LOCATION.lat},${ISLAMABAD_SEARCH_RADIUS_M}`;
+
 const PIN_RANGE_METERS = 500;
 const GEOAPIFY_API_KEY = import.meta.env.VITE_GEOAPIFY_API_KEY || '';
 
@@ -32,6 +40,9 @@ type GeoapifyFeature = {
     name?: string;
     address_line1?: string;
     address_line2?: string;
+    city?: string;
+    state?: string;
+    country?: string;
     lat?: number;
     lon?: number;
     result_type?: string;
@@ -50,15 +61,52 @@ const toAddressResult = (feature: GeoapifyFeature): AddressResult | null => {
 
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
+  const line =
+    [properties.address_line1 || properties.name, properties.address_line2].filter(Boolean).join(', ') || '';
+  const placeBits = [properties.city, properties.state, properties.country].filter(Boolean).join(', ');
+
+  const display_name =
+    (properties.formatted && String(properties.formatted).trim()) ||
+    (line && line.trim()) ||
+    (placeBits && placeBits.trim()) ||
+    'Location';
+
   return {
-    display_name:
-      properties.formatted ||
-      [properties.address_line1 || properties.name, properties.address_line2].filter(Boolean).join(', '),
+    display_name,
     lat,
     lon,
     type: properties.result_type,
     class: properties.category,
   };
+};
+
+const dedupeByLatLng = (list: AddressResult[], precision = 4): AddressResult[] => {
+  const seen = new Set<string>();
+  const out: AddressResult[] = [];
+  for (const r of list) {
+    const k = `${r.lat.toFixed(precision)},${r.lon.toFixed(precision)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+};
+
+/** Prefer shops / POIs, then other matches (Geoapify is weak on business names in address-only search). */
+const sortResultsWithPoisFirst = (list: AddressResult[]) => {
+  const isPoi = (m: AddressResult) =>
+    m.type === 'amenity' ||
+    m.type === 'building' ||
+    Boolean(
+      m.class && /catering|commercial|retail|service|tourism|leisure/i.test(String(m.class))
+    );
+
+  return [...list].sort((a, b) => {
+    const ra = isPoi(a) ? 0 : 1;
+    const rb = isPoi(b) ? 0 : 1;
+    if (ra !== rb) return ra - rb;
+    return 0;
+  });
 };
 
 const getPinnedCoordinates = (center: { lat: number; lng: number }, pin: { x: number; y: number }) => {
@@ -101,6 +149,7 @@ const CreateOffer = () => {
     aiSuggestion?: string;
     originalPrice?: number;
     offerPrice?: number;
+    discountPercentage?: number;
   } | null>(null);
   const offerCategory = ((session?.category === 'fitness' ? 'gym' : session?.category) || 'flash') as Category;
   const pinnedCoordinates = useMemo(() => getPinnedCoordinates(mapCenter, pin), [mapCenter, pin]);
@@ -157,7 +206,7 @@ const CreateOffer = () => {
 
     if (!GEOAPIFY_API_KEY) {
       toast.error('Geoapify key missing', {
-        description: 'Add VITE_GEOAPIFY_API_KEY to frontend/.env to enable exact Islamabad address search.',
+        description: 'Add VITE_GEOAPIFY_API_KEY to frontend/.env to enable Islamabad address search.',
       });
       return;
     }
@@ -165,31 +214,82 @@ const CreateOffer = () => {
     setLocating(true);
     setAddressResults([]);
 
-    try {
-      const searchText = /\bislamabad\b/i.test(address)
-        ? address.trim()
-        : `${address.trim()}, Islamabad, Pakistan`;
-      const params = new URLSearchParams({
-        text: searchText,
-        limit: '8',
-        lang: 'en',
-        filter: 'circle:73.0479,33.6844,30000',
-        bias: `proximity:${mapCenter.lng},${mapCenter.lat}`,
-        apiKey: GEOAPIFY_API_KEY,
-      });
-      const response = await fetch(
-        `https://api.geoapify.com/v1/geocode/autocomplete?${params.toString()}`
-      );
-      const data = await response.json();
-      const matches = ((data.features || []) as GeoapifyFeature[])
+    const raw = address.trim();
+    const searchText = /\bislamabad\b/i.test(raw) ? raw : `${raw}, Islamabad, Pakistan`;
+    const sharedGeo = {
+      limit: '12',
+      lang: 'en',
+      apiKey: GEOAPIFY_API_KEY,
+      filter: ISLAMABAD_GEOAPIFY_FILTER,
+      bias: `proximity:${mapCenter.lng},${mapCenter.lat}`,
+    } as const;
+
+    const addressLineParams: Record<string, string> = {
+      text: searchText,
+      ...sharedGeo,
+    };
+
+    const shopNameParams: Record<string, string> = {
+      name: raw.slice(0, 180),
+      city: 'Islamabad',
+      country: 'Pakistan',
+      ...sharedGeo,
+    };
+
+    const collectMatches = (features: unknown[]) =>
+      (features as GeoapifyFeature[])
         .map(toAddressResult)
         .filter((result): result is AddressResult => Boolean(result));
 
-      if (!matches.length) {
-        toast.error('Could not find that Islamabad address. Try adding sector, road, or landmark.');
+    const fetchGeoapify = async (path: 'autocomplete' | 'search', params: Record<string, string>) => {
+      const u = `https://api.geoapify.com/v1/geocode/${path}?${new URLSearchParams(params).toString()}`;
+      const res = await fetch(u);
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, data };
+    };
+
+    try {
+      const [auto, shopByName] = await Promise.all([
+        fetchGeoapify('autocomplete', addressLineParams),
+        fetchGeoapify('search', shopNameParams).catch(() => ({ ok: false, data: {} })),
+      ]);
+
+      if (!auto.ok) {
+        const data = auto.data as { message?: string };
+        const msg =
+          typeof data?.message === 'string'
+            ? data.message
+            : `Geoapify returned an error. Check your API key and billing.`;
+        toast.error('Address lookup failed', { description: msg });
         return;
       }
 
+      const fromAuto = collectMatches((auto.data as { features?: unknown[] }).features || []);
+      const fromShop = shopByName.ok
+        ? collectMatches((shopByName.data as { features?: unknown[] }).features || [])
+        : [];
+
+      let matches = sortResultsWithPoisFirst(dedupeByLatLng([...fromAuto, ...fromShop]));
+
+      if (!matches.length) {
+        const r2 = await fetchGeoapify('search', {
+          text: searchText,
+          ...sharedGeo,
+        });
+        if (r2.ok) {
+          matches = sortResultsWithPoisFirst(collectMatches((r2.data as { features?: unknown[] }).features || []));
+        }
+      }
+
+      if (!matches.length) {
+        toast.error('Could not find that place in Islamabad.', {
+          description:
+            'Try the shop or restaurant name, or sector + street (F-6, DHA 2). Not every business is in the map data—use Current location if needed.',
+        });
+        return;
+      }
+
+      matches = matches.slice(0, 10);
       setAddressResults(matches);
       selectAddressResult(matches[0]);
       toast.success(matches.length > 1 ? 'Choose the correct match below.' : 'Address found. Move the pin if needed.');
@@ -381,6 +481,7 @@ const CreateOffer = () => {
               aiSuggestion: bestOffer.aiSuggestion,
               originalPrice: bestOffer.originalPrice,
               offerPrice: bestOffer.offerPrice,
+              discountPercentage: bestOffer.discountPercentage,
             }
           : null
       );
@@ -466,6 +567,7 @@ const CreateOffer = () => {
               aiSuggestion: bestOffer.aiSuggestion,
               originalPrice: bestOffer.originalPrice,
               offerPrice: bestOffer.offerPrice,
+              discountPercentage: bestOffer.discountPercentage,
             }
           : null
       );
@@ -492,7 +594,7 @@ const CreateOffer = () => {
   };
 
   return (
-    <div className="w-full max-w-6xl p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
+    <div className="w-full max-w-6xl xl:max-w-7xl mx-auto p-3 xs:p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 overflow-x-hidden">
       <header>
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">AI Offer Studio</p>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">Create an offer</h1>
@@ -501,9 +603,9 @@ const CreateOffer = () => {
         </p>
       </header>
 
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)] gap-6 lg:gap-8">
+      <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] gap-6 xl:gap-8 min-w-0">
         {/* Form */}
-        <div className="space-y-4 sm:space-y-5">
+        <div className="space-y-4 sm:space-y-5 min-w-0">
           <Section step="1" title="What's your goal?">
             <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
               {goals.map((g) => (
@@ -558,11 +660,11 @@ const CreateOffer = () => {
                   value={address}
                   onChange={(event) => onAddressChange(event.target.value)}
                   onKeyDown={onSearchEnter}
-                  placeholder="Restaurant name, street, area, city, landmark..."
+                  placeholder="Shop / café name, or sector + street in Islamabad (e.g. Gloria Jeans F-7, DHA 2)"
                   className="mt-1.5 min-h-[78px] w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                 />
                 <span className="mt-1 block text-[11px] text-muted-foreground">
-                  Tip: add area/city for restaurant names. Press Ctrl+Enter to search.
+                  We search both street addresses and named places in Islamabad. Press Ctrl+Enter to find.
                 </span>
               </label>
 
@@ -677,17 +779,19 @@ const CreateOffer = () => {
         </div>
 
         {/* Preview */}
-        <aside className="lg:sticky lg:top-6 lg:self-start space-y-3">
+        <aside className="min-w-0 xl:sticky xl:top-6 xl:self-start space-y-3">
           <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Live preview</p>
           {generated ? (
             <div className="space-y-3 animate-fade-up">
+              <MerchantAiRationaleBubble text={generated.reasonWhyNow} />
               <OfferCard
                 merchantName={session?.name || ''}
                 category={offerCategory}
                 distanceMeters={120}
                 offerText={generated.offerText}
-                reasonWhyNow={generated.reasonWhyNow}
                 expiresInMinutes={generated.expiresInMinutes}
+                targetItem={generated.targetItem}
+                discountPercentage={generated.discountPercentage}
                 originalPrice={generated.originalPrice}
                 offerPrice={generated.offerPrice}
                 merchantAddress={address}
@@ -704,13 +808,13 @@ const CreateOffer = () => {
                     <div className="rounded-xl bg-secondary/70 p-3">
                       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Actual price</p>
                       <p className="text-sm font-semibold mt-1">
-                        {generated.originalPrice ? `$${generated.originalPrice.toFixed(2)}` : 'Unavailable'}
+                        {generated.originalPrice ? formatPkr(generated.originalPrice) : 'Unavailable'}
                       </p>
                     </div>
                     <div className="rounded-xl bg-success-soft p-3">
                       <p className="text-[10px] uppercase tracking-wider text-success">Offer price</p>
                       <p className="text-sm font-semibold text-success mt-1">
-                        {generated.offerPrice ? `$${generated.offerPrice.toFixed(2)}` : 'Unavailable'}
+                        {generated.offerPrice ? formatPkr(generated.offerPrice) : 'Unavailable'}
                       </p>
                     </div>
                   </div>

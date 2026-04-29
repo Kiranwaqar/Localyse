@@ -5,6 +5,7 @@ const authRoutes = require("./routes/authRoutes");
 const merchantRoutes = require("./routes/merchantRoutes");
 const offerRoutes = require("./routes/offerRoutes");
 const walletRoutes = require("./routes/walletRoutes");
+const { hasSmtpConfig, getSmtpEnvStatus } = require("./services/emailService");
 
 const app = express();
 
@@ -36,6 +37,10 @@ app.get("/api/health", (_req, res) => {
     status: "ok",
     service: "localyse-backend",
     timestamp: new Date().toISOString(),
+    /** If false, no emails (verify, coupons, etc.) will send — set SMTP_* in Vercel. */
+    smtpConfigured: hasSmtpConfig(),
+    /** Which SMTP vars look set (no secret values). All true = hasSmtpConfig can be true. */
+    smtpEnv: getSmtpEnvStatus(),
   });
 });
 

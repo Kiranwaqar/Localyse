@@ -4,10 +4,36 @@ import { verifyEmail } from '@/lib/api';
 import type { Role } from '@/lib/auth';
 import { toast } from 'sonner';
 
+/**
+ * De-dupe verification across React Strict Mode double-mount and fast re-renders.
+ * Without this, two concurrent POSTs can consume the one-time token; the second fails.
+ */
+const verifyDoneKeys = new Set<string>();
+const verifyInflight = new Map<string, Promise<void>>();
+
+const verifyEmailOnce = async (token: string, role: Role) => {
+  const key = `${role}:${token}`;
+  if (verifyDoneKeys.has(key)) {
+    return;
+  }
+  let p = verifyInflight.get(key);
+  if (!p) {
+    p = verifyEmail({ token, role })
+      .then(() => {
+        verifyDoneKeys.add(key);
+      })
+      .finally(() => {
+        verifyInflight.delete(key);
+      });
+    verifyInflight.set(key, p);
+  }
+  await p;
+};
+
 const VerifyEmail = () => {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const token = params.get('token') || '';
+  const token = (params.get('token') || '').trim();
   const role = (params.get('role') as Role) || 'customer';
 
   const [status, setStatus] = useState<'loading' | 'ok' | 'err'>('loading');
@@ -23,18 +49,29 @@ const VerifyEmail = () => {
       return;
     }
 
+    const doneKey = `${resolvedRole}:${token}`;
+    if (verifyDoneKeys.has(doneKey)) {
+      setStatus('ok');
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       try {
-        await verifyEmail({ token, role: resolvedRole });
+        await verifyEmailOnce(token, resolvedRole);
         if (cancelled) return;
         setStatus('ok');
         toast.success('Email verified', { description: 'You can sign in now.' });
       } catch (e) {
         if (cancelled) return;
         setStatus('err');
-        setErrMsg(e instanceof Error ? e.message : 'Verification failed.');
-        toast.error(e instanceof Error ? e.message : 'Verification failed.');
+        const msg = e instanceof Error ? e.message : 'Verification failed.';
+        const hint =
+          /Something went wrong|Failed to fetch|NetworkError/i.test(msg) || !msg.trim()
+            ? ' On Vercel, clear VITE_API_URL or remove any localhost value so the site uses the live /api routes.'
+            : '';
+        setErrMsg(msg + hint);
+        toast.error(msg);
       }
     })();
 

@@ -126,7 +126,13 @@ const Auth = () => {
             devPath: data.devVerificationPath,
             role: data.role,
           });
-          toast.info('Check your email', { description: 'We sent a verification link.' });
+          if (data.verificationEmailSent === false) {
+            toast.warning('Email may not have been sent', {
+              description: data.message || 'Fix SMTP on the server, then use Resend on sign-in.',
+            });
+          } else {
+            toast.info('Check your email', { description: 'We sent a verification link.' });
+          }
           return;
         }
         setSession(data);

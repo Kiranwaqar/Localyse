@@ -101,6 +101,7 @@ const signupMerchant = async (req, res, next) => {
       roleLabel: "merchant",
     });
 
+    const emailSent = Boolean(emailResult?.sent);
     const basePayload = {
       _id: merchant._id,
       name: merchant.name,
@@ -110,11 +111,15 @@ const signupMerchant = async (req, res, next) => {
       requiresEmailVerification: true,
       category: merchant.category,
       location: merchant.location,
-      message:
-        "We sent a verification link to your email. Open it to finish setting up your business account, then sign in here.",
+      verificationEmailSent: emailSent,
+      message: emailSent
+        ? "We sent a verification link to your email. Open it to finish setting up your business account, then sign in here."
+        : hasSmtpConfig()
+          ? "We could not send the verification email (SMTP error). Check Vercel function logs. After fixing SMTP, use Resend verification on sign-in."
+          : "Account created, but outgoing email is not configured. Add SMTP variables in Vercel → Environment Variables, redeploy, then use Resend verification on sign-in.",
     };
 
-    if (process.env.NODE_ENV === "development" && !emailResult?.sent) {
+    if (process.env.NODE_ENV === "development" && !emailSent) {
       basePayload.devVerificationPath = verifyPath;
       if (!hasSmtpConfig()) {
         basePayload.message =
@@ -153,7 +158,7 @@ const loginMerchant = async (req, res, next) => {
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
-    if (merchant.authProvider === "local" && merchant.emailVerified === false) {
+    if (merchant.authProvider === "local" && merchant.emailVerified !== true) {
       return res.status(403).json({
         message: "Check your email and verify your address before signing in. You can resend the link from the sign-in page.",
         emailVerified: false,

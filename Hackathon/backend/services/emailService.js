@@ -2,14 +2,15 @@ const nodemailer = require("nodemailer");
 const { formatPkr } = require("../utils/currency");
 const { getPublicAppUrl } = require("../utils/appUrl");
 
+/** Rejects only obvious .env template placeholders, not real app passwords. */
 const isRealValue = (value) => {
-  const normalized = String(value || "").trim().toLowerCase();
-  return Boolean(
-    normalized &&
-      !normalized.startsWith("your-") &&
-      !normalized.includes("put_") &&
-      !normalized.includes("app-password")
-  );
+  const s = String(value || "").trim();
+  if (!s) return false;
+  const n = s.toLowerCase();
+  if (n.startsWith("your-") || n === "password" || n === "changeme") {
+    return false;
+  }
+  return true;
 };
 
 const hasSmtpConfig = () =>
@@ -20,16 +21,56 @@ const hasSmtpConfig = () =>
       isRealValue(process.env.SMTP_PASS)
   );
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+/**
+ * Which SMTP vars look “set” (for /api/health). Does not expose secrets.
+ */
+const getSmtpEnvStatus = () => {
+  const port = Number(process.env.SMTP_PORT);
+  return {
+    hostSet: isRealValue(process.env.SMTP_HOST),
+    portSet: isRealValue(process.env.SMTP_PORT),
+    userSet: isRealValue(process.env.SMTP_USER),
+    passSet: isRealValue(process.env.SMTP_PASS),
+    fromSet: Boolean(String(process.env.SMTP_FROM || "").trim()),
+    portNumber: Number.isFinite(port) ? port : null,
+  };
+};
+
+const createTransporter = () => {
+  const port = Number(process.env.SMTP_PORT) || 587;
+  const host = String(process.env.SMTP_HOST || "").trim();
+  const secureFlag = String(process.env.SMTP_SECURE || "").toLowerCase() === "true";
+
+  // 465: SSL. 587: STARTTLS (secure must be false in Nodemailer). Other ports: follow SMTP_SECURE.
+  let secure;
+  if (port === 465) {
+    secure = true;
+  } else if (port === 587) {
+    secure = false;
+  } else {
+    secure = secureFlag;
+  }
+
+  const config = {
+    host,
+    port,
+    secure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-  });
+  };
+
+  if (port === 587) {
+    config.requireTLS = true;
+  }
+
+  if (port === 465 && host) {
+    config.tls = { servername: host };
+  }
+
+  return nodemailer.createTransport(config);
+};
 
 const sendEmail = async ({ to, subject, text, html }) => {
   if (!to) {
@@ -37,20 +78,25 @@ const sendEmail = async ({ to, subject, text, html }) => {
   }
 
   if (!hasSmtpConfig()) {
-    console.log(`[Email skipped: SMTP not configured] To: ${to} | ${subject} | ${text}`);
+    console.log(`[Email skipped: SMTP not configured] To: ${to} | ${subject}`);
     return { sent: false, reason: "smtp_not_configured" };
   }
 
-  const transporter = createTransporter();
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to,
-    subject,
-    text,
-    html,
-  });
-
-  return { sent: true };
+  try {
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to,
+      subject,
+      text,
+      html,
+    });
+    return { sent: true };
+  } catch (err) {
+    const msg = err && err.message ? String(err.message) : "unknown_error";
+    console.error("[Email send failed]", msg, err && err.responseCode ? `(code ${err.responseCode})` : "");
+    return { sent: false, reason: "smtp_send_failed", detail: msg };
+  }
 };
 
 const buildCouponEmailHtml = ({ merchantName, offerText, couponCode }) => `
@@ -445,6 +491,7 @@ module.exports = {
   sendBudgetAlignedOfferEmail,
   sendSignupVerificationEmail,
   hasSmtpConfig,
+  getSmtpEnvStatus,
   sendMerchantApplicationAdminNotify,
   sendMerchantApplicationApproved,
   sendMerchantApplicationRejected,

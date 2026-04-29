@@ -10,8 +10,39 @@ import type {
   WalletResponse,
 } from './domain';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : '');
+/**
+ * API origin for `fetch`. On Vercel the Express API is served on the same host (`/api/*` rewrites).
+ *
+ * In **production**, use a **relative** base (empty string) so requests go to the deployed site.
+ * If `VITE_API_URL` is set to `http://localhost:5000` in Vercel (a common copy-paste mistake), the
+ * browser would call the user's own computer during email verification, sign-in, etc. — we ignore
+ * localhost-style values in production builds.
+ */
+const resolveApiBaseUrl = (): string => {
+  const raw = String(import.meta.env.VITE_API_URL || '').trim();
+
+  if (import.meta.env.DEV) {
+    return raw || 'http://localhost:5000';
+  }
+
+  if (!raw) {
+    return '';
+  }
+
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('localhost') ||
+    lower.includes('127.0.0.1') ||
+    lower.includes('[::1]') ||
+    /https?:\/\/0\.0\.0\.0/.test(lower)
+  ) {
+    return '';
+  }
+
+  return raw.replace(/\/$/, '');
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 type RequestOptions = RequestInit & {
   body?: BodyInit | Record<string, unknown>;

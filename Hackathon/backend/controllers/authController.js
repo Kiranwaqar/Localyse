@@ -232,12 +232,14 @@ const verifyEmailToken = async (req, res, next) => {
       return res.status(400).json({ message: "Verification token and role are required." });
     }
 
+    const normalizedToken = String(token).trim();
+
     if (role === "customer") {
       const user = await User.findOne({
-        emailVerificationToken: token,
+        emailVerificationToken: normalizedToken,
         emailVerificationExpires: { $gt: new Date() },
         role: "customer",
-      });
+      }).select("+emailVerificationToken +emailVerificationExpires");
 
       if (!user) {
         return res.status(400).json({
@@ -259,9 +261,9 @@ const verifyEmailToken = async (req, res, next) => {
 
     if (role === "merchant") {
       const merchant = await Merchant.findOne({
-        emailVerificationToken: token,
+        emailVerificationToken: normalizedToken,
         emailVerificationExpires: { $gt: new Date() },
-      });
+      }).select("+emailVerificationToken +emailVerificationExpires");
 
       if (!merchant) {
         return res.status(400).json({
@@ -313,7 +315,7 @@ const resendVerificationEmail = async (req, res, next) => {
       if (user.authProvider === "google") {
         return res.status(400).json({ message: "This account uses Google sign-in." });
       }
-      if (user.emailVerified !== false) {
+      if (user.emailVerified === true) {
         return res.json({ message: "Your email is already verified. You can sign in.", alreadyVerified: true });
       }
 
@@ -362,7 +364,7 @@ const resendVerificationEmail = async (req, res, next) => {
     if (merchant.authProvider === "google") {
       return res.status(400).json({ message: "This business uses Google sign-in." });
     }
-    if (merchant.emailVerified !== false) {
+    if (merchant.emailVerified === true) {
       return res.json({ message: "Your email is already verified. You can sign in.", alreadyVerified: true });
     }
 

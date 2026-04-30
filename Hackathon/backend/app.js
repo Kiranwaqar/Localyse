@@ -33,10 +33,13 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/api/health", (_req, res) => {
+  const googleClientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
   res.json({
     status: "ok",
     service: "localyse-backend",
     timestamp: new Date().toISOString(),
+    /** Backend can verify Google JWTs only if this matches the Web client ID baked into the frontend (VITE_GOOGLE_CLIENT_ID). */
+    googleSignInConfigured: Boolean(googleClientId),
     /** If false, no emails (verify, coupons, etc.) will send — set SMTP_* in Vercel. */
     smtpConfigured: hasSmtpConfig(),
     /** Which SMTP vars look set (no secret values). All true = hasSmtpConfig can be true. */

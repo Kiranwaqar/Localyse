@@ -51,7 +51,7 @@ const GoogleSignInButton = ({ role, intent, category, blocked, onSuccess, onErro
   const onErrorRef = useRef(onError);
   const [loadingScript, setLoadingScript] = useState(false);
   const [measuredWidth, setMeasuredWidth] = useState(0);
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  const clientId = String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
   onSuccessRef.current = onSuccess;
   onErrorRef.current = onError;

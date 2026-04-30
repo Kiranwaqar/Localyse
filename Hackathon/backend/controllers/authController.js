@@ -12,8 +12,10 @@ const { isMerchantSignupAllowed } = require("../utils/merchantSignupGate");
 const FORGOT_PASSWORD_MESSAGE =
   "If an account with a password exists for that email, we sent reset instructions. Check your inbox and spam.";
 
+const getGoogleClientId = () => (process.env.GOOGLE_CLIENT_ID || "").trim();
+
 const getAudience = () => {
-  const id = process.env.GOOGLE_CLIENT_ID;
+  const id = getGoogleClientId();
   if (!id) {
     const err = new Error("Server configuration error: Google Sign-In is not configured.");
     err.statusCode = 500;
@@ -56,7 +58,7 @@ const toMerchantSession = (merchant) => ({
 
 const googleAuth = async (req, res, next) => {
   try {
-    if (!process.env.GOOGLE_CLIENT_ID) {
+    if (!getGoogleClientId()) {
       return res.status(503).json({
         message: "Google Sign-In is not configured. Set GOOGLE_CLIENT_ID on the server.",
       });
@@ -77,7 +79,22 @@ const googleAuth = async (req, res, next) => {
     let payload;
     try {
       payload = await verifyIdToken(credential);
-    } catch {
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      let tokenAud = "";
+      try {
+        const parts = credential.split(".");
+        if (parts.length === 3) {
+          const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+          tokenAud = claims && claims.aud ? String(claims.aud) : "";
+        }
+      } catch {
+        /* ignore decode errors */
+      }
+      console.error("[auth/google] verifyIdToken failed:", msg, {
+        tokenAud: tokenAud || "(could not read)",
+        serverAudience: getGoogleClientId(),
+      });
       return res.status(401).json({ message: "Could not verify Google. Please try again." });
     }
 

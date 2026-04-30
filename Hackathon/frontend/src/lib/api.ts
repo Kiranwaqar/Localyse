@@ -14,6 +14,7 @@ import type {
  * API origin for `fetch`. On Vercel the Express API is served on the same host (`/api/*` rewrites).
  *
  * In **production**, use a **relative** base (empty string) so requests go to the deployed site.
+ * In **development**, an empty `VITE_API_URL` uses Vite’s proxy so `/api` → backend :5000 (same origin as the SPA, no CORS).
  * If `VITE_API_URL` is set to `http://localhost:5000` in Vercel (a common copy-paste mistake), the
  * browser would call the user's own computer during email verification, sign-in, etc. — we ignore
  * localhost-style values in production builds.
@@ -22,7 +23,9 @@ const resolveApiBaseUrl = (): string => {
   const raw = String(import.meta.env.VITE_API_URL || '').trim();
 
   if (import.meta.env.DEV) {
-    return raw || 'http://localhost:5000';
+    // Empty → relative `/api...` handled by Vite proxy to backend :5000 (no CORS).
+    if (raw) return raw.replace(/\/$/, '');
+    return '';
   }
 
   if (!raw) {
@@ -48,19 +51,33 @@ type RequestOptions = RequestInit & {
   body?: BodyInit | Record<string, unknown>;
 };
 
+const isLikelyNetworkFailure = (e: unknown): boolean =>
+  e instanceof TypeError ||
+  (e instanceof Error && /failed to fetch|networkerror|load failed/i.test(e.message));
+
 const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
   const body = options.body && typeof options.body !== 'string'
     ? JSON.stringify(options.body)
     : options.body;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    body,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      body,
+    });
+  } catch (e) {
+    if (isLikelyNetworkFailure(e)) {
+      throw new Error(
+        'Could not reach the API. Start the backend (npm run dev in backend), use the Vite app on port 8080 with an empty VITE_API_URL, or fix CORS_ORIGIN to include your dev origin.',
+      );
+    }
+    throw e;
+  }
 
   const data = await response.json().catch(() => ({}));
 
@@ -72,10 +89,20 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
 };
 
 const requestForm = async <T>(path: string, formData: FormData): Promise<T> => {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      body: formData,
+    });
+  } catch (e) {
+    if (isLikelyNetworkFailure(e)) {
+      throw new Error(
+        'Could not reach the API. Start the backend (npm run dev in backend), use the Vite app on port 8080 with an empty VITE_API_URL, or fix CORS_ORIGIN to include your dev origin.',
+      );
+    }
+    throw e;
+  }
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {

@@ -9,9 +9,19 @@ const { hasSmtpConfig, getSmtpEnvStatus } = require("./services/emailService");
 
 const app = express();
 
+/** Comma-separated origins allowed, e.g. `http://localhost:8080,https://app.vercel.app`. */
+const corsOriginOption = () => {
+  const raw = String(process.env.CORS_ORIGIN || "").trim();
+  if (!raw || raw === "*") return "*";
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (list.length === 0) return "*";
+  if (list.length === 1) return list[0];
+  return list;
+};
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "*",
+    origin: corsOriginOption(),
   })
 );
 app.use(express.json({ limit: "1mb" }));

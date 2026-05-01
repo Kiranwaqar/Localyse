@@ -28,40 +28,63 @@ const normalizeText = (value) => String(value || "").trim().toLowerCase();
 
 const moodProfiles = {
   tired: {
+    id: "tired",
     label: "Tired",
-    intent: "restore energy without feeling heavy",
-    keywords: ["coffee", "tea", "cold", "iced", "smoothie", "juice", "fresh", "protein", "energy"],
-    impact: "It should give them a light energy lift and make the next part of the day feel easier.",
+    intent: "restore energy without a heavy commitment",
+    keywords: ["coffee", "tea", "cold", "iced", "smoothie", "juice", "fresh", "quick", "express", "pickup", "grab", "protein", "energy"],
+    impact: "It should give a light lift and make the next stretch of the day feel easier.",
   },
   stressed: {
+    id: "stressed",
     label: "Stressed",
-    intent: "feel comforted and calmer",
-    keywords: ["dessert", "cake", "brownie", "sweet", "tea", "soup", "warm", "cookie", "comfort"],
-    impact: "It should feel like a small comfort break and help them slow down for a moment.",
+    intent: "feel calmer with a small, reassuring win",
+    keywords: ["comfort", "sweet", "tea", "warm", "spa", "lounge", "bundle", "save", "deal", "cookie", "dessert", "soup"],
+    impact: "It should feel like a manageable pause — not another decision to overthink.",
   },
   happy: {
+    id: "happy",
     label: "Happy",
-    intent: "keep the mood fun and shareable",
-    keywords: ["pizza", "burger", "combo", "fries", "share", "family", "shake", "deal"],
-    impact: "It should keep the mood playful and make the offer feel like a small celebration.",
+    intent: "keep the mood bright and shareable",
+    keywords: ["share", "party", "family", "combo", "deal", "friends", "class", "studio", "membership", "bogo", "pizza", "burger"],
+    impact: "It should feel celebratory and easy to enjoy with others.",
   },
   hungry: {
-    label: "Hungry",
-    intent: "feel full and satisfied",
-    keywords: ["meal", "burger", "sandwich", "pizza", "rice", "wrap", "pasta", "biryani", "platter", "combo"],
-    impact: "It should satisfy hunger first, then make the deal feel practical rather than impulsive.",
+    id: "hungry",
+    label: "Eager",
+    intent: "get something substantial and satisfying for the effort",
+    keywords: [
+      "meal",
+      "burger",
+      "sandwich",
+      "pizza",
+      "platter",
+      "combo",
+      "haul",
+      "stock",
+      "retail",
+      "sale",
+      "membership",
+      "class pack",
+      "session pack",
+      "biryani",
+      "wrap",
+      "pasta",
+    ],
+    impact: "It should feel like a full win — worth the trip or the spend — not a snack-sized compromise.",
   },
   cozy: {
+    id: "cozy",
     label: "Cozy",
-    intent: "feel warm, relaxed, and settled",
-    keywords: ["latte", "coffee", "tea", "hot", "croissant", "bakery", "cookie", "soup", "warm", "cocoa"],
-    impact: "It should make the moment feel softer and more relaxed.",
+    intent: "feel warm, settled, and unhurried",
+    keywords: ["latte", "coffee", "tea", "hot", "bakery", "warm", "soup", "cocoa", "browse", "lounge", "croissant", "cookie"],
+    impact: "It should make the moment feel softer and easier to linger in.",
   },
   focused: {
+    id: "focused",
     label: "Focused",
-    intent: "stay clear-headed and productive",
-    keywords: ["coffee", "espresso", "protein", "smoothie", "juice", "energy", "quick", "wrap", "salad", "fresh"],
-    impact: "It should support focus with quick energy while avoiding a slow, heavy choice.",
+    intent: "stay sharp and on schedule",
+    keywords: ["coffee", "espresso", "protein", "energy", "quick", "express", "gym", "class", "session", "pass", "smoothie", "fresh"],
+    impact: "It should support momentum — quick value without dragging the day sideways.",
   },
 };
 
@@ -81,10 +104,10 @@ const scoreOfferForMood = (offer, mood) => {
   const text = getOfferSearchText(offer);
   const matchedKeywords = mood.keywords.filter((keyword) => text.includes(keyword));
   const categoryBoost =
-    mood.label === "Tired" && offer.category === "coffee" ? 8 :
-    mood.label === "Hungry" && ["food", "flash"].includes(offer.category) ? 8 :
-    mood.label === "Cozy" && offer.category === "coffee" ? 8 :
-    mood.label === "Focused" && ["coffee", "gym"].includes(offer.category) ? 8 :
+    mood.id === "tired" && offer.category === "coffee" ? 8 :
+    mood.id === "hungry" && ["food", "flash", "retail"].includes(offer.category) ? 8 :
+    mood.id === "cozy" && offer.category === "coffee" ? 8 :
+    mood.id === "focused" && ["coffee", "gym"].includes(offer.category) ? 8 :
     0;
 
   return matchedKeywords.length * 10 + categoryBoost + Number(offer.discountPercentage || 0) / 5;
@@ -1381,7 +1404,7 @@ const getCustomerFoodAnalysis = async (req, res, next) => {
       `Claimed/redeemed categories:${JSON.stringify(categoryCounts)}. Favorite merchant:${topMerchant}.`,
       `Time pattern:${topTime}. Avg claimed discount:${averageDiscount || 0}%.`,
       `Claim history:${claimedTexts || "none yet"}. Live offers:${liveOfferTexts || "none"}.`,
-      "Generate sweet concise food recommendations, avoid categories they ignore, suggest best time and offer style.",
+      "Generate concise local-offer ideas across dining, retail, fitness, and experiences. Respect their categories and discount comfort; avoid types they never claim.",
     ].join(" ");
     const ai = await getContextInsights(query);
     const recommendations = liveOffers
@@ -1415,8 +1438,8 @@ const getCustomerFoodAnalysis = async (req, res, next) => {
       },
       sweetSummary:
         claims.length > 0
-          ? `You feel like a ${topTime} ${topCategory} explorer who likes ${averageDiscount || "good"}% deals.`
-          : "Your food personality is just starting to bloom. Claim a few offers and Localyse will learn your taste.",
+          ? `You read like a ${topTime} ${topCategory} regular who likes ~${averageDiscount || "good"}% deals.`
+          : "Your deal style is still taking shape. Claim a few offers and Localyse will reflect what you actually use.",
       aiSuggestion: ai.answer,
       signals: ai.signals,
       source: ai.source,

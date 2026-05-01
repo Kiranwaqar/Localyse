@@ -47,43 +47,58 @@ const moodOptions: { id: MoodId; label: string; icon: string; description: strin
     id: 'tired',
     label: 'Tired',
     icon: 'bi-moon-stars',
-    description: 'Cool, minty, refreshing, or caffeine-friendly picks.',
-    keywords: ['mint', 'margarita', 'mojito', 'cold', 'iced', 'coffee', 'tea', 'smoothie', 'juice', 'lemon', 'fresh'],
+    description: 'Easy wins: quick pickup, refreshers, and light energy.',
+    keywords: ['coffee', 'tea', 'cold', 'iced', 'smoothie', 'juice', 'fresh', 'quick', 'express', 'pickup', 'grab'],
   },
   {
     id: 'stressed',
     label: 'Stressed',
     icon: 'bi-cloud-drizzle',
-    description: 'Comfort food, desserts, and calming little treats.',
-    keywords: ['chocolate', 'dessert', 'cake', 'brownie', 'comfort', 'tea', 'soup', 'warm', 'cookie', 'sweet'],
+    description: 'Calm, low-friction offers — treats, self-care, or a simple save.',
+    keywords: ['comfort', 'sweet', 'tea', 'warm', 'spa', 'lounge', 'bundle', 'save', 'deal', 'cookie', 'dessert'],
   },
   {
     id: 'happy',
     label: 'Happy',
     icon: 'bi-balloon-heart',
-    description: 'Shareable, fun, bright offers for a good mood.',
-    keywords: ['pizza', 'burger', 'combo', 'fries', 'share', 'party', 'family', 'sweet', 'shake', 'deal'],
+    description: 'Bright, social, or celebratory deals worth sharing.',
+    keywords: ['share', 'party', 'family', 'combo', 'deal', 'friends', 'class', 'studio', 'membership', 'bogo'],
   },
   {
     id: 'hungry',
-    label: 'Hungry',
-    icon: 'bi-egg-fried',
-    description: 'Filling meals and proper food first.',
-    keywords: ['meal', 'burger', 'sandwich', 'pizza', 'rice', 'wrap', 'pasta', 'biryani', 'platter', 'combo'],
+    label: 'Eager',
+    icon: 'bi-bag-heart',
+    description: 'Substantial offers: meals, hauls, class packs, or big-value retail.',
+    keywords: [
+      'meal',
+      'burger',
+      'sandwich',
+      'pizza',
+      'platter',
+      'combo',
+      'haul',
+      'stock',
+      'retail',
+      'sale',
+      'membership',
+      'class pack',
+      'session pack',
+      'biryani',
+    ],
   },
   {
     id: 'cozy',
     label: 'Cozy',
     icon: 'bi-cup-hot',
-    description: 'Warm drinks, bakery bites, and soft comfort.',
-    keywords: ['latte', 'coffee', 'tea', 'hot', 'croissant', 'bakery', 'cookie', 'soup', 'warm', 'cocoa'],
+    description: 'Slow, warm, linger-friendly spots and soft saves.',
+    keywords: ['latte', 'coffee', 'tea', 'hot', 'bakery', 'warm', 'soup', 'cocoa', 'browse', 'lounge'],
   },
   {
     id: 'focused',
     label: 'Focused',
     icon: 'bi-lightning-charge',
-    description: 'Quick energy without slowing you down.',
-    keywords: ['coffee', 'espresso', 'protein', 'smoothie', 'juice', 'energy', 'quick', 'wrap', 'salad', 'fresh'],
+    description: 'Fast, efficient picks that keep you on track.',
+    keywords: ['coffee', 'espresso', 'protein', 'energy', 'quick', 'express', 'gym', 'class', 'session', 'pass'],
   },
 ];
 
@@ -148,7 +163,7 @@ const getMoodBoost = (offer: Offer, moodId: MoodId | '') => {
   const matchedKeywords = mood.keywords.filter((keyword) => offerText.includes(keyword));
   const categoryBoost =
     moodId === 'tired' && offer.category === 'coffee' ? 8 :
-    moodId === 'hungry' && ['food', 'flash'].includes(offer.category) ? 8 :
+    moodId === 'hungry' && ['food', 'flash', 'retail'].includes(offer.category) ? 8 :
     moodId === 'cozy' && offer.category === 'coffee' ? 8 :
     moodId === 'focused' && ['coffee', 'gym'].includes(offer.category) ? 8 :
     0;
@@ -476,7 +491,7 @@ const Saved = () => {
               {forYouInfo?.filterSource === 'heuristic' && 'Rule-based match to your claims (add GROQ_API_KEY for full AI). '}
               {forYouInfo?.filterSource === 'none' && (forYouInfo?.message || 'Sign in and claim offers to unlock this feed. ')}
               {forYouInfo?.tavilyUsed ? 'Tavily: on · ' : claims.length > 0 ? 'Tavily: optional · ' : ''}
-              {personalizationSummary.length > 0 ? personalizationSummary.join(' · ') : 'Your taste signals come from real claims, not just profile settings.'}
+              {personalizationSummary.length > 0 ? personalizationSummary.join(' · ') : 'Your preference signals come from real claims, not just profile settings.'}
             </p>
           </div>
         </div>
@@ -491,7 +506,7 @@ const Saved = () => {
             <p className="text-xs uppercase tracking-wider text-[#b35f88] font-semibold">Mood quest</p>
             <h2 className="mt-1 text-lg font-semibold leading-tight">How are you feeling?</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Pick a mood and Localyse will turn it into a tiny food adventure.
+              Pick a mood and Localyse will shape nearby offers to match — based on what you actually like to claim.
             </p>
           </div>
         </div>
@@ -550,20 +565,20 @@ const Saved = () => {
         <section className="overflow-hidden rounded-3xl border border-[#f5c7dc] bg-[#fff4fb] p-4 sm:p-5 shadow-sm">
           <div className="flex items-start gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#ffd6e9] text-[#b35f88]">
-              <i className="bi bi-cup-straw text-xl" />
+              <i className="bi bi-sliders text-xl" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wider text-[#b35f88] font-semibold">AI food analysis</p>
-              <h2 className="mt-1 text-lg font-semibold leading-tight">Your sweet food mood</h2>
+              <p className="text-xs uppercase tracking-wider text-[#b35f88] font-semibold">Preference snapshot</p>
+              <h2 className="mt-1 text-lg font-semibold leading-tight">Your local deal style</h2>
               <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{foodAnalysis.sweetSummary}</p>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 xs:grid-cols-2 gap-2 text-xs">
-            <FoodStat label="Favorite" value={foodAnalysis.tasteProfile.favoriteCategory} />
-            <FoodStat label="Best time" value={foodAnalysis.tasteProfile.preferredTime} />
-            <FoodStat label="Deal comfort" value={`${foodAnalysis.tasteProfile.averageClaimedDiscount || 0}% off`} />
-            <FoodStat label="Claims learned" value={foodAnalysis.tasteProfile.totalClaims.toString()} />
+            <PreferenceStat label="Top category" value={foodAnalysis.tasteProfile.favoriteCategory} />
+            <PreferenceStat label="Peak time" value={foodAnalysis.tasteProfile.preferredTime} />
+            <PreferenceStat label="Deal comfort" value={`${foodAnalysis.tasteProfile.averageClaimedDiscount || 0}% off`} />
+            <PreferenceStat label="Claims so far" value={foodAnalysis.tasteProfile.totalClaims.toString()} />
           </div>
 
           <div className="mt-4 rounded-2xl bg-white/75 p-4 ring-1 ring-[#f5c7dc]">
@@ -573,7 +588,7 @@ const Saved = () => {
 
           {foodAnalysis.recommendations.length > 0 && (
             <div className="mt-4 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground">Recommended next bites</p>
+              <p className="text-xs font-semibold text-muted-foreground">Suggested next picks</p>
               {foodAnalysis.recommendations.map((recommendation) => (
                 <div key={`${recommendation.merchantName}-${recommendation.offerText}`} className="rounded-2xl bg-white/70 p-3">
                   <p className="text-sm font-semibold">{recommendation.merchantName}</p>
@@ -709,7 +724,7 @@ const Saved = () => {
   );
 };
 
-const FoodStat = ({ label, value }: { label: string; value: string }) => (
+const PreferenceStat = ({ label, value }: { label: string; value: string }) => (
   <div className="rounded-2xl bg-white/70 px-3 py-2 ring-1 ring-[#f5c7dc]">
     <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
     <p className="mt-1 font-semibold capitalize text-foreground">{value}</p>

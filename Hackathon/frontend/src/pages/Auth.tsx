@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { setSession, Role, Session } from '@/lib/auth';
+import { clearSession, getSession, setSession, Role, Session } from '@/lib/auth';
 import { login, resendVerification, signup } from '@/lib/api';
 import { toast } from 'sonner';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
@@ -29,6 +29,10 @@ const formatCountdown = (ms: number) => {
   const r = s % 60;
   return `${m}:${r.toString().padStart(2, '0')}`;
 };
+
+const isEmailConflictMessage = (message: string) =>
+  /already used for a|already exists\.?$/i.test(message) ||
+  /already used for/i.test(message);
 
 const merchantCategoryOptions = [
   { value: 'food', label: 'Restaurant / Food' },
@@ -62,6 +66,13 @@ const Auth = () => {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendUnlockAt, setResendUnlockAt] = useState<number | null>(() => readStoredResendUnlockAt());
   const [, setResendTick] = useState(0);
+  const [browserSession, setBrowserSession] = useState<Session | null>(() => getSession());
+
+  useEffect(() => {
+    const syncSession = () => setBrowserSession(getSession());
+    window.addEventListener('storage', syncSession);
+    return () => window.removeEventListener('storage', syncSession);
+  }, []);
 
   useEffect(() => {
     if (resendUnlockAt == null) return;
@@ -88,6 +99,15 @@ const Auth = () => {
       /* ignore */
     }
   }, []);
+
+  const signOutThisDevice = useCallback(() => {
+    clearSession();
+    clearResendCooldown();
+    setBrowserSession(null);
+    toast.info('Signed out on this device', {
+      description: 'Your browser was still holding the old account; you can sign up or sign in again.',
+    });
+  }, [clearResendCooldown]);
 
   const showSignInResendPanel =
     mode === 'signin' &&
@@ -156,7 +176,16 @@ const Auth = () => {
         beginResendCooldown();
       }
       setError(message);
-      toast.error(message);
+      const conflict = mode === 'signup' && isEmailConflictMessage(message);
+      toast.error(message, {
+        ...(conflict
+          ? {
+              description:
+                'Resetting MongoDB does not clear this browser. Use “Sign out on this device” above if you still see an old session. If this persists, remove the email from both the users and merchants collections (an address cannot be both).',
+              duration: 10_000,
+            }
+          : {}),
+      });
     } finally {
       setSubmitting(false);
     }
@@ -218,7 +247,16 @@ const Auth = () => {
 
   const onGoogleError = useCallback((message: string) => {
     setError(message);
-    toast.error(message);
+    const conflict = isEmailConflictMessage(message);
+    toast.error(message, {
+      ...(conflict
+        ? {
+            description:
+              'Same checks as email sign-up: clear the other account type in the database, or sign out here if only the browser was out of date.',
+            duration: 10_000,
+          }
+        : {}),
+    });
   }, []);
 
   return (
@@ -234,6 +272,24 @@ const Auth = () => {
 
       <main className="flex-1 flex w-full min-w-0 items-start sm:items-center justify-center px-3 xs:px-4 sm:px-6 py-6 sm:py-10">
         <div className="w-full min-w-0 max-w-md mx-auto animate-fade-up">
+          {browserSession && (
+            <div className="mb-4 rounded-xl border border-border bg-secondary/50 px-3.5 py-3 text-left">
+              <p className="text-xs font-medium text-foreground">
+                Signed in on this browser as{' '}
+                <span className="text-foreground">{browserSession.email}</span> ({browserSession.role})
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                Clearing the database does not remove this session. Sign out here before re-using the same email.
+              </p>
+              <button
+                type="button"
+                onClick={signOutThisDevice}
+                className="mt-2.5 text-xs font-semibold text-primary hover:underline"
+              >
+                Sign out on this device
+              </button>
+            </div>
+          )}
           <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-primary bg-primary-soft px-2.5 py-1 rounded-full mb-4">
             <i className={`bi ${role === 'merchant' ? 'bi-shop' : 'bi-person'} text-[10px]`} />
             {role === 'merchant' ? 'Merchant portal' : 'Customer wallet'}

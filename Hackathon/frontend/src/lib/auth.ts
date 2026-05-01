@@ -19,7 +19,7 @@ export interface Session {
 
 export type SignupResult = Session & {
   requiresEmailVerification?: boolean;
-  /** False when the server could not send the verification email (configure SMTP on Vercel). */
+  /** False when the server could not send the verification email. */
   verificationEmailSent?: boolean;
   message?: string;
   devVerificationPath?: string;

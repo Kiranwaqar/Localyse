@@ -25,16 +25,110 @@ const createUser = async (req, res, next) => {
     }
     const normalizedEmail = emailCheck.email;
 
-    const existingMerchant = await Merchant.findOne({ email: normalizedEmail });
-    if (existingMerchant) {
-      return res.status(409).json({
-        message: "This email is already used for a merchant account. Use a different email for your customer account.",
-      });
+    const merchantAtEmail = await Merchant.findOne({ email: normalizedEmail }).select("+password");
+
+    if (merchantAtEmail?.linkedUserId) {
+      return res.status(409).json({ message: "A user with this email already exists." });
     }
 
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(409).json({ message: "A user with this email already exists." });
+    }
+
+    const standaloneMerchant = merchantAtEmail && !merchantAtEmail.linkedUserId ? merchantAtEmail : null;
+
+    if (standaloneMerchant) {
+      if (!standaloneMerchant.password) {
+        return res.status(409).json({
+          message:
+            "This email already has a merchant profile that signs in with Google. Use Continue with Google to open your wallet on the same email.",
+        });
+      }
+
+      const match = await bcrypt.compare(password, standaloneMerchant.password);
+      if (!match) {
+        return res.status(403).json({
+          message: "Enter the same password as your merchant account to attach your wallet to this email.",
+        });
+      }
+
+      let verifyToken;
+      let expiresAt;
+      const inheritedVerified = standaloneMerchant.emailVerified === true;
+
+      if (!inheritedVerified) {
+        const secret = createEmailVerificationSecret();
+        verifyToken = secret.token;
+        expiresAt = secret.expiresAt;
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await User.create({
+        name,
+        email: normalizedEmail,
+        password: hashedPassword,
+        role: "customer",
+        authProvider: "local",
+        emailVerified: inheritedVerified,
+        ...(verifyToken ? { emailVerificationToken: verifyToken, emailVerificationExpires: expiresAt } : {}),
+        location,
+        preferences: Array.isArray(preferences) ? preferences : [],
+      });
+
+      await Merchant.updateOne({ _id: standaloneMerchant._id }, { $set: { linkedUserId: user._id } });
+
+      if (inheritedVerified) {
+        return res.status(201).json({
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          emailVerified: true,
+          location: user.location,
+          preferences: user.preferences,
+          message: "Wallet created and linked to your merchant profile.",
+        });
+      }
+
+      const appUrl = getPublicAppUrl();
+      const verifyPath = `/verify-email?${new URLSearchParams({ token: verifyToken, role: "customer" }).toString()}`;
+      const verifyUrl = `${appUrl}${verifyPath}`;
+
+      const emailResult = await sendSignupVerificationEmail({
+        to: normalizedEmail,
+        name: user.name,
+        verifyUrl,
+        roleLabel: "customer",
+      });
+
+      const emailSent = Boolean(emailResult?.sent);
+      const basePayload = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: false,
+        requiresEmailVerification: true,
+        location: user.location,
+        preferences: user.preferences,
+        verificationEmailSent: emailSent,
+        message: emailSent
+          ? "We sent a verification link for your wallet. After you verify, you can switch between merchant and wallet on this email."
+          : hasSmtpConfig()
+            ? "We could not send the verification email (SMTP error). Check Vercel function logs. After fixing SMTP, use Resend verification on sign-in."
+            : "Account created, but outgoing email is not configured. Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (and usually SMTP_FROM) in Vercel → Environment Variables, redeploy, then use Resend verification on sign-in.",
+      };
+
+      if (process.env.NODE_ENV === "development" && !emailSent) {
+        basePayload.devVerificationPath = verifyPath;
+        if (!hasSmtpConfig()) {
+          basePayload.message =
+            "SMTP is not configured. In development, use the local link below; add SMTP in production to send real emails.";
+        }
+      }
+
+      return res.status(201).json(basePayload);
     }
 
     const { token: verifyToken, expiresAt } = createEmailVerificationSecret();

@@ -152,7 +152,7 @@ const Landing = () => {
             { icon: 'bi-shop', l: 'Real merchants' },
             { icon: 'bi-broadcast', l: 'Live offers' },
             { icon: 'bi-stars', l: 'AI context' },
-            { icon: 'bi-database', l: 'MongoDB-backed' },
+            { icon: 'bi-shield-check', l: 'Secure & reliable' },
           ].map((s) => (
             <div key={s.l}>
               <i className={`bi ${s.icon} text-xl text-primary`} />

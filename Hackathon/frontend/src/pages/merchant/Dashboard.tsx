@@ -49,7 +49,7 @@ const Dashboard = () => {
     try {
       await deleteOffer(offerId, session._id);
       setActiveOffers((offers) => offers.filter((offer) => offer.id !== offerId));
-      toast.success('Offer deleted from MongoDB.');
+      toast.success('Offer removed.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to delete this offer.';
       toast.error('Delete failed', { description: message });
@@ -85,7 +85,7 @@ const Dashboard = () => {
         <div className="flex-1 min-w-0 relative">
           <p className="text-[10px] uppercase tracking-wider text-lavender mb-1 font-semibold">AI insight</p>
           <p className="text-base sm:text-lg font-semibold tracking-tight">
-            {activeOffers.length > 0 ? 'AI offers are live from MongoDB.' : 'No live offers yet.'}
+            {activeOffers.length > 0 ? 'Your AI offers are live.' : 'No live offers yet.'}
           </p>
           <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
             Generate offers after adding real merchants so this dashboard reflects production data only.
@@ -119,7 +119,7 @@ const Dashboard = () => {
         </div>
         <div className="bg-card border border-border rounded-2xl divide-y divide-border overflow-hidden">
           {loading ? (
-            <div className="p-5 text-sm text-muted-foreground">Loading offers from MongoDB...</div>
+            <div className="p-5 text-sm text-muted-foreground">Loading your offers...</div>
           ) : activeOffers.length === 0 ? (
             <div className="p-8 text-center">
               <i className="bi bi-broadcast text-2xl text-muted-foreground" />

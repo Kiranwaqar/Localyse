@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
+const { normalizeMerchantName } = require("../utils/normalizeMerchantName");
 
-const locationSchema = new mongoose.Schema(
-  {
+const locationSchema = new mongoose.Schema(  {
     lat: {
       type: Number,
       min: -90,
@@ -55,6 +55,12 @@ const merchantSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    /** Lowercased, trimmed; used to enforce one business name per platform (see unique index). */
+    nameNormalized: {
+      type: String,
+      trim: true,
+      select: false,
+    },
     email: {
       type: String,
       unique: true,
@@ -77,6 +83,12 @@ const merchantSchema = new mongoose.Schema(
       sparse: true,
       unique: true,
       trim: true,
+    },
+    /** When set, this merchant shares identity (password / Google account) with the linked User wallet. */
+    linkedUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      sparse: true,
     },
     category: {
       type: String,
@@ -114,7 +126,16 @@ const merchantSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+merchantSchema.pre("validate", function merchantNameNormalized(next) {
+  if (this.name) {
+    this.nameNormalized = normalizeMerchantName(this.name);
+  }
+  next();
+});
+
 merchantSchema.index({ category: 1 });
+merchantSchema.index({ nameNormalized: 1 }, { unique: true, sparse: true });
+merchantSchema.index({ linkedUserId: 1 }, { unique: true, sparse: true });
 merchantSchema.index({ emailVerificationToken: 1 }, { sparse: true, unique: true });
 merchantSchema.index({ passwordResetToken: 1 }, { sparse: true, unique: true });
 

@@ -282,7 +282,7 @@ const MapView = () => {
             <i className="bi bi-search text-2xl text-muted-foreground" />
             <p className="text-sm font-medium mt-3">No unclaimed offers within 2km right now</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Make sure merchants have location saved in MongoDB, then generate active offers.
+              Ensure merchants save a street address or map pin, then create active offers.
             </p>
           </div>
         ) : (

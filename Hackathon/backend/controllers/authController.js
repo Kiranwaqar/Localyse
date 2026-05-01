@@ -8,6 +8,11 @@ const { getPublicAppUrl } = require("../utils/appUrl");
 const { assertSignupEmailAllowed } = require("../utils/signupEmailPolicy");
 const { sendSignupVerificationEmail, sendPasswordResetEmail } = require("../services/emailService");
 const { isMerchantSignupAllowed } = require("../utils/merchantSignupGate");
+const {
+  findMerchantByNormalizedName,
+  BUSINESS_NAME_TAKEN_MESSAGE,
+  isDuplicateMerchantNameKeyError,
+} = require("../utils/merchantBusinessName");
 
 const FORGOT_PASSWORD_MESSAGE =
   "If an account with a password exists for that email, we sent reset instructions. Check your inbox and spam.";
@@ -123,30 +128,65 @@ const googleAuth = async (req, res, next) => {
         return res.status(400).json({ message: "Select a business category before continuing with Google." });
       }
 
-      const userConflict = await User.findOne({ email });
-      if (userConflict) {
-        return res.status(409).json({
-          message:
-            "This email is already used for a customer account. Use a different Google account for your business, or sign in as a customer.",
-        });
-      }
+      let user =
+        (await User.findOne({ googleSub })) || (email ? await User.findOne({ email }) : null);
 
       let merchant =
-        (await Merchant.findOne({ googleSub })) || (email ? await Merchant.findOne({ email }) : null);
+        (await Merchant.findOne({ googleSub })) ||
+        (email ? await Merchant.findOne({ email }) : null);
 
-      if (merchant) {
-        if (merchant.googleSub && merchant.googleSub !== googleSub) {
+      if (!merchant && user) {
+        merchant = await Merchant.findOne({ linkedUserId: user._id });
+      }
+
+      const merchantGoogleAllows = !merchant.googleSub || merchant.googleSub === googleSub;
+      const emailsMatch = merchant.email && email && merchant.email === email;
+      const canLinkStandaloneToWallet =
+        merchant &&
+        user &&
+        !merchant.linkedUserId &&
+        emailsMatch &&
+        user.googleSub === googleSub &&
+        merchantGoogleAllows;
+
+      if (canLinkStandaloneToWallet) {
+        merchant.linkedUserId = user._id;
+        if (!user.googleSub) {
+          user.googleSub = googleSub;
+          user.authProvider = "google";
+          user.emailVerified = true;
+          user.set("emailVerificationToken", undefined);
+          user.set("emailVerificationExpires", undefined);
+          await user.save();
+        }
+        await merchant.save();
+      }
+
+      if (merchant?.linkedUserId) {
+        const wallet = await User.findById(merchant.linkedUserId);
+        if (!wallet || wallet.googleSub !== googleSub) {
           return res.status(403).json({ message: "This Google account is not linked to that business profile." });
         }
-        if (merchant.email && merchant.email !== email) {
-          return res.status(403).json({ message: "This Google account does not match the email on file." });
-        }
-        if (!merchant.googleSub) {
-          merchant.googleSub = googleSub;
-          merchant.authProvider = "google";
-        }
-        if (!merchant.email) {
-          merchant.email = email;
+        user = wallet;
+      }
+
+      if (merchant) {
+        if (merchant.linkedUserId && user?.googleSub === googleSub) {
+          /** linked profile: wallet holds Google identity; merchant row never stores duplicate googleSub */
+        } else {
+          if (merchant.googleSub && merchant.googleSub !== googleSub) {
+            return res.status(403).json({ message: "This Google account is not linked to that business profile." });
+          }
+          if (merchant.email && merchant.email !== email) {
+            return res.status(403).json({ message: "This Google account does not match the email on file." });
+          }
+          if (!merchant.googleSub) {
+            merchant.googleSub = googleSub;
+            merchant.authProvider = "google";
+          }
+          if (!merchant.email) {
+            merchant.email = email;
+          }
         }
         if (name && !merchant.name) {
           merchant.name = name;
@@ -174,6 +214,35 @@ const googleAuth = async (req, res, next) => {
         return res.status(403).json({ message: approval.message });
       }
 
+      const nameTaken = await findMerchantByNormalizedName(name);
+      if (nameTaken) {
+        return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+      }
+
+      /** New merchant: attach to existing wallet or create standalone business **/
+      if (user) {
+        const wallet = user;
+        if (wallet.googleSub && wallet.googleSub !== googleSub) {
+          return res.status(403).json({ message: "This Google account is not linked to that business profile." });
+        }
+        if (wallet.email && email && wallet.email !== email) {
+          return res.status(403).json({ message: "This Google account does not match the email on file." });
+        }
+        if (wallet.role !== "customer") {
+          return res.status(400).json({ message: "This wallet cannot add a merchant profile." });
+        }
+
+        merchant = await Merchant.create({
+          name,
+          email: wallet.email || email,
+          category: cat,
+          authProvider: "google",
+          emailVerified: true,
+          linkedUserId: wallet._id,
+        });
+        return res.status(201).json(toMerchantSession(merchant));
+      }
+
       merchant = await Merchant.create({
         name,
         email,
@@ -186,16 +255,41 @@ const googleAuth = async (req, res, next) => {
       return res.status(201).json(toMerchantSession(merchant));
     }
 
-    // customer
-    const merchantConflict = await Merchant.findOne({ email });
-    if (merchantConflict) {
-      return res.status(409).json({
-        message:
-          "This email is already used for a merchant account. Use a different email for your wallet, or sign in to the business portal.",
-      });
+    // customer — wallet shares email with merchants when linked automatically
+    let merchant =
+      (await Merchant.findOne({ googleSub })) || (email ? await Merchant.findOne({ email }) : null);
+
+    let user =
+      (await User.findOne({ googleSub })) || (email ? await User.findOne({ email }) : null);
+
+    if (!user && merchant?.linkedUserId) {
+      user = await User.findById(merchant.linkedUserId);
     }
 
-    let user = (await User.findOne({ googleSub })) || (email ? await User.findOne({ email }) : null);
+    const signupWalletStandaloneBusinessMatch =
+      mode === "signup" &&
+      !user &&
+      merchant &&
+      !merchant.linkedUserId &&
+      !merchant.password &&
+      ((merchant.googleSub && merchant.googleSub === googleSub) ||
+        (!merchant.googleSub && merchant.email && merchant.email === email));
+
+    if (signupWalletStandaloneBusinessMatch) {
+      user = await User.create({
+        name,
+        email,
+        role: "customer",
+        authProvider: "google",
+        googleSub,
+        emailVerified: true,
+        preferences: [],
+      });
+
+      merchant.linkedUserId = user._id;
+      await merchant.save();
+      return res.status(201).json(toCustomerSession(user));
+    }
 
     if (user) {
       if (user.role !== "customer") {
@@ -221,6 +315,19 @@ const googleAuth = async (req, res, next) => {
       user.set("emailVerificationToken", undefined);
       user.set("emailVerificationExpires", undefined);
       await user.save();
+
+      if (merchant && !merchant.linkedUserId) {
+        const canLinkExistingSession =
+          !merchant.password &&
+          ((merchant.googleSub && merchant.googleSub === googleSub) ||
+            (!merchant.googleSub && merchant.email === email));
+
+        if (canLinkExistingSession) {
+          merchant.linkedUserId = user._id;
+          await merchant.save();
+        }
+      }
+
       return res.json(toCustomerSession(user));
     }
 
@@ -242,6 +349,9 @@ const googleAuth = async (req, res, next) => {
 
     return res.status(201).json(toCustomerSession(user));
   } catch (error) {
+    if (isDuplicateMerchantNameKeyError(error)) {
+      return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+    }
     return next(error);
   }
 };
@@ -376,7 +486,61 @@ const resendVerificationEmail = async (req, res, next) => {
     }
 
     const merchant = await Merchant.findOne({ email: normalizedEmail }).select("+password");
-    if (!merchant || !merchant.password) {
+    if (!merchant) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    if (merchant.linkedUserId) {
+      const wallet = await User.findById(merchant.linkedUserId).select("+password");
+      if (!wallet || !wallet.password) {
+        return res.status(401).json({ message: "Invalid email or password." });
+      }
+      const match = await bcrypt.compare(password, wallet.password);
+      if (!match) {
+        return res.status(401).json({ message: "Invalid email or password." });
+      }
+      if (wallet.authProvider === "google") {
+        return res.status(400).json({ message: "This account uses Google sign-in." });
+      }
+      if (wallet.emailVerified === true) {
+        return res.json({ message: "Your email is already verified. You can sign in.", alreadyVerified: true });
+      }
+
+      const { token, expiresAt } = createEmailVerificationSecret();
+      await User.findByIdAndUpdate(wallet._id, {
+        $set: {
+          emailVerificationToken: token,
+          emailVerificationExpires: expiresAt,
+        },
+      });
+
+      const appUrl = getPublicAppUrl();
+      const verifyPath = `/verify-email?${new URLSearchParams({ token, role: "customer" }).toString()}`;
+      const verifyUrl = `${appUrl}${verifyPath}`;
+
+      const emailResult = await sendSignupVerificationEmail({
+        to: normalizedEmail,
+        name: wallet.name,
+        verifyUrl,
+        roleLabel: "customer",
+      });
+
+      const sent = Boolean(emailResult?.sent);
+      const payload = {
+        message: sent
+          ? "We sent a new verification link to your email for your wallet (shared with merchant sign-in)."
+          : "We could not send email. Check SMTP settings, or on localhost see the dev link in the response.",
+        sent,
+      };
+
+      if (process.env.NODE_ENV === "development" && !sent) {
+        payload.devVerificationPath = verifyPath;
+      }
+
+      return res.json(payload);
+    }
+
+    if (!merchant.password) {
       return res.status(401).json({ message: "Invalid email or password." });
     }
     const match = await bcrypt.compare(password, merchant.password);
@@ -469,7 +633,36 @@ const forgotPassword = async (req, res, next) => {
       }
     } else {
       const merchant = await Merchant.findOne({ email: normalizedEmail }).select("+password");
-      if (merchant && merchant.password) {
+
+      if (merchant?.linkedUserId) {
+        const wallet = await User.findById(merchant.linkedUserId).select("+password");
+        if (wallet?.password) {
+          const { token, expiresAt } = createPasswordResetSecret();
+          await User.findByIdAndUpdate(wallet._id, {
+            $set: {
+              passwordResetToken: token,
+              passwordResetExpires: expiresAt,
+            },
+          });
+          const appUrl = getPublicAppUrl();
+          const resetPath = `/reset-password?${new URLSearchParams({ token, role: "customer" }).toString()}`;
+          const resetUrl = `${appUrl}${resetPath}`;
+          const emailResult = await sendPasswordResetEmail({
+            to: normalizedEmail,
+            name: wallet.name || merchant.name,
+            resetUrl,
+            roleLabel: "Account",
+          });
+          const sent = Boolean(emailResult?.sent);
+          const payload = { message: FORGOT_PASSWORD_MESSAGE, sent };
+          if (process.env.NODE_ENV === "development" && !sent) {
+            payload.devResetPath = resetPath;
+          }
+          return res.json(payload);
+        }
+      }
+
+      if (merchant?.password) {
         const { token, expiresAt } = createPasswordResetSecret();
         await Merchant.findByIdAndUpdate(merchant._id, {
           $set: {

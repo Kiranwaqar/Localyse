@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { CustomerNotificationsProvider } from '@/contexts/CustomerNotificationsContext';
 import { CustomerNotificationMenu } from '@/components/CustomerNotificationMenu';
+import { CustomerOnboardingTour } from '@/components/CustomerOnboardingTour';
 
 const tabs = [
   { to: '/app', icon: 'bi-house', activeIcon: 'bi-house-fill', label: 'Home', shortLabel: 'Home', end: true },
@@ -24,6 +25,7 @@ const CustomerLayout = () => {
 
   return (
     <CustomerNotificationsProvider>
+      <CustomerOnboardingTour />
       <div className="flex min-h-screen min-h-dvh w-full flex-col bg-background md:h-dvh md:flex-row md:overflow-hidden">
         {/* Laptop / desktop — sidebar navigation */}
         <aside className="hidden md:flex md:w-56 lg:w-60 shrink-0 flex-col border-r border-border bg-card min-h-0">

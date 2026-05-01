@@ -7,6 +7,12 @@ const { isMerchantSignupAllowed } = require("../utils/merchantSignupGate");
 const { createEmailVerificationSecret } = require("../utils/emailVerificationToken");
 const { getPublicAppUrl } = require("../utils/appUrl");
 const { sendSignupVerificationEmail, hasSmtpConfig } = require("../services/emailService");
+const {
+  findMerchantByNormalizedName,
+  BUSINESS_NAME_TAKEN_MESSAGE,
+  isDuplicateMerchantNameKeyError,
+} = require("../utils/merchantBusinessName");
+const { normalizeMerchantName } = require("../utils/normalizeMerchantName");
 
 const createMerchant = async (req, res, next) => {
   try {
@@ -28,6 +34,11 @@ const createMerchant = async (req, res, next) => {
       }
     }
 
+    const nameTaken = await findMerchantByNormalizedName(name);
+    if (nameTaken) {
+      return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+    }
+
     const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
     const merchant = await Merchant.create({
       name,
@@ -40,6 +51,9 @@ const createMerchant = async (req, res, next) => {
 
     return res.status(201).json(merchant);
   } catch (error) {
+    if (isDuplicateMerchantNameKeyError(error)) {
+      return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+    }
     return next(error);
   }
 };
@@ -58,15 +72,82 @@ const signupMerchant = async (req, res, next) => {
     }
     const normalizedEmail = emailCheck.email;
 
-    const existingUser = await User.findOne({ email: normalizedEmail });
-    if (existingUser) {
+    const nameTaken = await findMerchantByNormalizedName(name);
+    if (nameTaken) {
+      return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+    }
+
+    const merchantAtEmail = await Merchant.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email: normalizedEmail }).select("+password");
+
+    if (merchantAtEmail?.linkedUserId) {
+      const sameWallet = existingUser && String(merchantAtEmail.linkedUserId) === String(existingUser._id);
       return res.status(409).json({
-        message: "This email is already used for a customer account. Use a different email for your business.",
+        message: sameWallet ? "A merchant profile on this wallet already exists." : "A merchant with this email already exists.",
       });
     }
 
-    const existingMerchant = await Merchant.findOne({ email: normalizedEmail });
-    if (existingMerchant) {
+    if (existingUser) {
+      if (merchantAtEmail) {
+        return res.status(409).json({
+          message:
+            "This email already has a business profile. Sign in as a customer with the same email and password to link your wallet, then try again from the merchant portal.",
+        });
+      }
+      if (existingUser.role !== "customer") {
+        return res.status(400).json({ message: "This wallet cannot add a merchant profile." });
+      }
+      if (!existingUser.password || existingUser.authProvider === "google") {
+        return res.status(403).json({
+          message:
+            "This wallet uses Google sign-in. Use “Continue with Google” as a merchant instead of a password.",
+        });
+      }
+      const passwordMatches = await bcrypt.compare(password, existingUser.password);
+      if (!passwordMatches) {
+        return res.status(403).json({
+          message: "Use the same password as your wallet to add a merchant profile on this email.",
+        });
+      }
+      if (existingUser.emailVerified !== true) {
+        return res.status(403).json({
+          message:
+            "Verify your customer email first, then return here to add your business on the same account.",
+          emailVerified: false,
+        });
+      }
+
+      const approval = await isMerchantSignupAllowed(normalizedEmail);
+      if (!approval.ok) {
+        return res.status(403).json({ message: approval.message });
+      }
+
+      const merchant = await Merchant.create({
+        name,
+        email: normalizedEmail,
+        category,
+        authProvider: "local",
+        emailVerified: true,
+        linkedUserId: existingUser._id,
+        location,
+        businessRules,
+      });
+
+      const basePayload = {
+        _id: merchant._id,
+        name: merchant.name,
+        email: merchant.email,
+        role: "merchant",
+        emailVerified: true,
+        category: merchant.category,
+        location: merchant.location,
+        message: "Your business profile is linked to your wallet. Choose “Merchant portal” next time you sign in.",
+      };
+
+      return res.status(201).json(basePayload);
+    }
+
+    if (merchantAtEmail) {
       return res.status(409).json({ message: "A merchant with this email already exists." });
     }
 
@@ -129,6 +210,9 @@ const signupMerchant = async (req, res, next) => {
 
     return res.status(201).json(basePayload);
   } catch (error) {
+    if (isDuplicateMerchantNameKeyError(error)) {
+      return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+    }
     return next(error);
   }
 };
@@ -148,8 +232,46 @@ const loginMerchant = async (req, res, next) => {
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
+    if (merchant.linkedUserId) {
+      const credentialUser = await User.findById(merchant.linkedUserId).select("+password");
+      if (!credentialUser) {
+        return res.status(401).json({ message: "Invalid email or password." });
+      }
+      if (!credentialUser.password) {
+        return res.status(401).json({
+          message: "This account uses Google sign-in. Use “Continue with Google” instead.",
+        });
+      }
+
+      const passwordMatches = await bcrypt.compare(password, credentialUser.password);
+
+      if (!passwordMatches) {
+        return res.status(401).json({ message: "Invalid email or password." });
+      }
+
+      if (credentialUser.authProvider === "local" && credentialUser.emailVerified !== true) {
+        return res.status(403).json({
+          message:
+            "Check your email and verify your address before signing in. You can resend the link from the sign-in page.",
+          emailVerified: false,
+        });
+      }
+
+      return res.json({
+        _id: merchant._id,
+        name: merchant.name,
+        email: merchant.email,
+        role: "merchant",
+        emailVerified: credentialUser.emailVerified !== false,
+        category: merchant.category,
+        location: merchant.location,
+      });
+    }
+
     if (!merchant.password) {
-      return res.status(401).json({ message: "This business uses Google sign-in. Use “Continue with Google” instead." });
+      return res.status(401).json({
+        message: "This business uses Google sign-in. Use “Continue with Google” instead.",
+      });
     }
 
     const passwordMatches = await bcrypt.compare(password, merchant.password);
@@ -160,7 +282,8 @@ const loginMerchant = async (req, res, next) => {
 
     if (merchant.authProvider === "local" && merchant.emailVerified !== true) {
       return res.status(403).json({
-        message: "Check your email and verify your address before signing in. You can resend the link from the sign-in page.",
+        message:
+          "Check your email and verify your address before signing in. You can resend the link from the sign-in page.",
         emailVerified: false,
       });
     }
@@ -206,10 +329,18 @@ const updateMerchant = async (req, res, next) => {
       return res.status(409).json({ message: "A merchant with this email already exists." });
     }
 
+    const nameTaken = await findMerchantByNormalizedName(name, id);
+    if (nameTaken) {
+      return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+    }
+
+    const nameNormalized = normalizeMerchantName(name);
+
     const merchant = await Merchant.findByIdAndUpdate(
       id,
       {
         name,
+        nameNormalized,
         email,
         category,
         location,
@@ -231,6 +362,9 @@ const updateMerchant = async (req, res, next) => {
       location: merchant.location,
     });
   } catch (error) {
+    if (isDuplicateMerchantNameKeyError(error)) {
+      return res.status(409).json({ message: BUSINESS_NAME_TAKEN_MESSAGE });
+    }
     return next(error);
   }
 };

@@ -17,13 +17,13 @@ export interface Offer {
   expectedCustomerVolume?: number;
   expectedBusinessImpact?: string;
   aiSuggestion?: string;
-  /** Short Tavily-style hook shown on the coupon (customer-facing). */
+  /** Short teaser line shown on the coupon (customer-facing). */
   charmLine?: string;
   /** Extra sparkle line from search signals or follow-on context. */
   charmSubtext?: string;
   /** "For you" feed: AI+history fit score (backend). */
   forYouScore?: number;
-  /** "For you" feed: one-line reason from Groq/heuristic. */
+  /** “For you” feed: short reason from personalization (AI or heuristic). */
   forYouReason?: string;
   claimCount?: number;
   claimed?: boolean;
@@ -201,7 +201,7 @@ export interface BudgetRecommendation {
   savings: string;
   urgency: 'low' | 'medium' | 'high';
   explanation: string;
-  /** Set when Groq enriches the card (headline + budget angle). */
+  /** Present when personalization enriches the card (headline + budget framing). */
   ai_insight?: string;
   ai_budget_angle?: string;
 }
@@ -213,7 +213,7 @@ export interface WalletRecommendationsResponse {
   daily_safe_limit: number;
   forecast: string;
   recommendations: BudgetRecommendation[];
-  /** Groq (or rules fallback): narrative + tips; per-card text may also be merged into recommendations. */
+  /** Personalized narrative + tips; may merge with heuristic copy in recommendations. */
   aiAnalysis?: {
     summary: string;
     tips: string[];
@@ -225,7 +225,7 @@ export interface WalletRecommendationsResponse {
     weather?: string;
     /** 1–2 short what-to-do lines derived from current conditions. */
     weatherActions?: string[];
-    /** Tavily: typical PKR ranges for the selected category (reference vs offer prices). */
+    /** Typical PKR ranges from web reference for this category vs offer pricing. */
     priceBenchmark?: {
       answer: string;
       query?: string;

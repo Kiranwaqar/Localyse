@@ -11,19 +11,14 @@ import type {
 } from './domain';
 
 /**
- * API origin for `fetch`. On Vercel the Express API is served on the same host (`/api/*` rewrites).
- *
- * In **production**, use a **relative** base (empty string) so requests go to the deployed site.
- * In **development**, an empty `VITE_API_URL` uses Vite’s proxy so `/api` → backend :5000 (same origin as the SPA, no CORS).
- * If `VITE_API_URL` is set to `http://localhost:5000` in Vercel (a common copy-paste mistake), the
- * browser would call the user's own computer during email verification, sign-in, etc. — we ignore
- * localhost-style values in production builds.
+ * Resolves base URL for API requests. Prefer a relative URL in production so calls stay on the same host as the app.
+ * In development, leaving the env unset uses the bundler proxy to the API.
  */
 const resolveApiBaseUrl = (): string => {
   const raw = String(import.meta.env.VITE_API_URL || '').trim();
 
   if (import.meta.env.DEV) {
-    // Empty → relative `/api...` handled by Vite proxy to backend :5000 (no CORS).
+    // Empty URL → `/api…` routed through dev proxy to backend (same origin).
     if (raw) return raw.replace(/\/$/, '');
     return '';
   }
@@ -73,7 +68,9 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
   } catch (e) {
     if (isLikelyNetworkFailure(e)) {
       throw new Error(
-        'Could not reach the API. Start the backend (npm run dev in backend), use the Vite app on port 8080 with an empty VITE_API_URL, or fix CORS_ORIGIN to include your dev origin.',
+        import.meta.env.PROD
+          ? 'Unable to reach the server. Check your connection and try again.'
+          : 'Unable to reach the API. Confirm the backend is running, then refresh this page.',
       );
     }
     throw e;
@@ -98,7 +95,9 @@ const requestForm = async <T>(path: string, formData: FormData): Promise<T> => {
   } catch (e) {
     if (isLikelyNetworkFailure(e)) {
       throw new Error(
-        'Could not reach the API. Start the backend (npm run dev in backend), use the Vite app on port 8080 with an empty VITE_API_URL, or fix CORS_ORIGIN to include your dev origin.',
+        import.meta.env.PROD
+          ? 'Unable to reach the server. Check your connection and try again.'
+          : 'Unable to reach the API. Confirm the backend is running, then refresh this page.',
       );
     }
     throw e;

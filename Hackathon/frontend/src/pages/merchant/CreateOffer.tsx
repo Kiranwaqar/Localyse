@@ -16,15 +16,15 @@ const goals = [
   { id: 'newcust', label: 'Attract new customers', icon: 'bi-stars' },
 ];
 
-/** Map default & Geoapify regional filter center (rough ICT / Blue Area area). */
+/** Default map pin & Islamabad-area search anchor (approx. ICT). */
 const DEFAULT_LOCATION = { lat: 33.72, lng: 73.05 };
-/** Meters. ~50 km radius covers all Islamabad sectors, Margalla fringes, Tarnol–Bani Gala–Park Rd belt within ICT. */
+/** Meters. ~50 km radius covers Islamabad ICT and nearby belts for address lookup. */
 const ISLAMABAD_SEARCH_RADIUS_M = 50000;
-/** Geoapify `circle:lon,lat,radiusMeters` — full-city Islamabad only. */
-const ISLAMABAD_GEOAPIFY_FILTER = `circle:${DEFAULT_LOCATION.lng},${DEFAULT_LOCATION.lat},${ISLAMABAD_SEARCH_RADIUS_M}`;
+/** Geocoder circle filter `{ lon, lat, radiusM }` scoped to Islamabad. */
+const ISLAMABAD_MAP_FILTER = `circle:${DEFAULT_LOCATION.lng},${DEFAULT_LOCATION.lat},${ISLAMABAD_SEARCH_RADIUS_M}`;
 
 const PIN_RANGE_METERS = 500;
-const GEOAPIFY_API_KEY = import.meta.env.VITE_GEOAPIFY_API_KEY || '';
+const MAP_SEARCH_API_KEY = import.meta.env.VITE_GEOAPIFY_API_KEY || '';
 
 type AddressResult = {
   display_name: string;
@@ -34,7 +34,7 @@ type AddressResult = {
   class?: string;
 };
 
-type GeoapifyFeature = {
+type GeocoderApiFeature = {
   properties?: {
     formatted?: string;
     name?: string;
@@ -53,7 +53,7 @@ type GeoapifyFeature = {
   };
 };
 
-const toAddressResult = (feature: GeoapifyFeature): AddressResult | null => {
+const toAddressResult = (feature: GeocoderApiFeature): AddressResult | null => {
   const properties = feature.properties || {};
   const coordinates = feature.geometry?.coordinates;
   const lon = Number(properties.lon ?? coordinates?.[0]);
@@ -92,7 +92,7 @@ const dedupeByLatLng = (list: AddressResult[], precision = 4): AddressResult[] =
   return out;
 };
 
-/** Prefer shops / POIs, then other matches (Geoapify is weak on business names in address-only search). */
+/** Prefer shops / POIs when mixing street-address and storefront search. */
 const sortResultsWithPoisFirst = (list: AddressResult[]) => {
   const isPoi = (m: AddressResult) =>
     m.type === 'amenity' ||
@@ -204,9 +204,9 @@ const CreateOffer = () => {
       return;
     }
 
-    if (!GEOAPIFY_API_KEY) {
-      toast.error('Geoapify key missing', {
-        description: 'Add VITE_GEOAPIFY_API_KEY to frontend/.env to enable Islamabad address search.',
+    if (!MAP_SEARCH_API_KEY) {
+      toast.error('Address search unavailable', {
+        description: 'Location search isn’t enabled in this environment. Enter your address manually.',
       });
       return;
     }
@@ -219,8 +219,8 @@ const CreateOffer = () => {
     const sharedGeo = {
       limit: '12',
       lang: 'en',
-      apiKey: GEOAPIFY_API_KEY,
-      filter: ISLAMABAD_GEOAPIFY_FILTER,
+      apiKey: MAP_SEARCH_API_KEY,
+      filter: ISLAMABAD_MAP_FILTER,
       bias: `proximity:${mapCenter.lng},${mapCenter.lat}`,
     } as const;
 
@@ -237,11 +237,11 @@ const CreateOffer = () => {
     };
 
     const collectMatches = (features: unknown[]) =>
-      (features as GeoapifyFeature[])
+      (features as GeocoderApiFeature[])
         .map(toAddressResult)
         .filter((result): result is AddressResult => Boolean(result));
 
-    const fetchGeoapify = async (path: 'autocomplete' | 'search', params: Record<string, string>) => {
+    const fetchGeocoder = async (path: 'autocomplete' | 'search', params: Record<string, string>) => {
       const u = `https://api.geoapify.com/v1/geocode/${path}?${new URLSearchParams(params).toString()}`;
       const res = await fetch(u);
       const data = await res.json().catch(() => ({}));
@@ -250,8 +250,8 @@ const CreateOffer = () => {
 
     try {
       const [auto, shopByName] = await Promise.all([
-        fetchGeoapify('autocomplete', addressLineParams),
-        fetchGeoapify('search', shopNameParams).catch(() => ({ ok: false, data: {} })),
+        fetchGeocoder('autocomplete', addressLineParams),
+        fetchGeocoder('search', shopNameParams).catch(() => ({ ok: false, data: {} })),
       ]);
 
       if (!auto.ok) {
@@ -259,7 +259,7 @@ const CreateOffer = () => {
         const msg =
           typeof data?.message === 'string'
             ? data.message
-            : `Geoapify returned an error. Check your API key and billing.`;
+            : 'Address lookup failed. Try again or enter your location manually.';
         toast.error('Address lookup failed', { description: msg });
         return;
       }
@@ -272,7 +272,7 @@ const CreateOffer = () => {
       let matches = sortResultsWithPoisFirst(dedupeByLatLng([...fromAuto, ...fromShop]));
 
       if (!matches.length) {
-        const r2 = await fetchGeoapify('search', {
+        const r2 = await fetchGeocoder('search', {
           text: searchText,
           ...sharedGeo,
         });
@@ -490,7 +490,7 @@ const CreateOffer = () => {
         toast.info('No offer generated for this merchant.');
       } else {
         toast.success('AI offer generated and saved', {
-          description: 'The offer is now stored in MongoDB.',
+          description: 'Your offer has been saved and is visible to matching customers.',
         });
       }
     } catch (err) {
@@ -576,7 +576,7 @@ const CreateOffer = () => {
         toast.info('No offer generated for this merchant.');
       } else {
         toast.success('AI offer generated and saved', {
-          description: 'The offer is now stored in MongoDB.',
+          description: 'Your offer has been saved and is visible to matching customers.',
         });
       }
     } catch (err) {
@@ -589,7 +589,7 @@ const CreateOffer = () => {
   */
 
   const publish = () => {
-    toast.success('Offer already saved', { description: 'This AI-generated offer is live in MongoDB.' });
+    toast.success('Offer already saved', { description: 'This offer is published and visible to customers.' });
     navigate('/merchant');
   };
 

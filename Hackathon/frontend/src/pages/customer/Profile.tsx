@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { updateUser } from '@/lib/api';
 import { clearSession, getSession, setSession } from '@/lib/auth';
 import { toast } from 'sonner';
+import { resetCustomerTour } from '@/lib/customerOnboarding';
 
 const preferenceOptions = ['coffee', 'food', 'retail', 'fitness', 'vegetarian', 'desserts', 'student deals', 'high discount'];
 
@@ -52,7 +53,7 @@ const Profile = () => {
       setSession(updated);
       setEditing(false);
       toast.success('Profile updated', {
-        description: 'Your account info was saved to MongoDB.',
+        description: 'Your profile was saved.',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not update your profile.';
@@ -169,6 +170,31 @@ const Profile = () => {
           ) : (
             <p className="text-sm text-muted-foreground">No saved preferences yet.</p>
           )}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2.5">Help</h2>
+        <div className="bg-card border border-border rounded-2xl p-4 sm:p-5">
+          <p className="text-sm text-muted-foreground mb-3">
+            New here? Run the short welcome bubbles again — they explain each tab in the app.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              const id = session?._id;
+              if (!id) {
+                toast.error('Sign in again to replay the tour.');
+                return;
+              }
+              resetCustomerTour(id);
+              toast.message('Welcome tour will show on Home.');
+              navigate('/app');
+            }}
+            className="h-10 rounded-xl border border-primary/30 bg-primary-soft text-primary text-sm font-medium px-4 hover:bg-primary/15 transition"
+          >
+            Replay welcome tour
+          </button>
         </div>
       </section>
 

@@ -149,8 +149,8 @@ const GoogleSignInButton = ({ role, intent, category, blocked, onSuccess, onErro
       >
         <p className="text-xs font-medium text-foreground">Google Sign-In is not configured</p>
         <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1 leading-relaxed break-words">
-          Add <code className="text-foreground/90">VITE_GOOGLE_CLIENT_ID</code> and matching{' '}
-          <code className="text-foreground/90">GOOGLE_CLIENT_ID</code> in your environment, then restart the app.
+          Google sign-in hasn’t been set up for this deployment yet. If you manage this site, configure Google OAuth for
+          the web app and redeploy.
         </p>
       </div>
     );

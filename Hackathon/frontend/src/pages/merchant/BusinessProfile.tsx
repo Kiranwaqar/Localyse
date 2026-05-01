@@ -46,7 +46,7 @@ const BusinessProfile = () => {
       setCurrentSession(updatedSession);
       setIsEditing(false);
       toast.success('Business details updated', {
-        description: 'Your merchant record was saved in MongoDB.',
+        description: 'Your business profile was saved.',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not update business details.';

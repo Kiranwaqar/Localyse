@@ -30,6 +30,14 @@ const emptyBudgets = categories.reduce(
 
 const money = (value: number) => formatPkr(Number(value || 0));
 
+const clipText = (text: string, max: number) => {
+  const t = String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) return '';
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
+
 const stateCopy: Record<string, { label: string; color: string }> = {
   overspending: { label: 'Overspending', color: 'text-destructive bg-destructive/10' },
   at_risk: { label: 'At risk', color: 'text-amber-700 bg-amber-100' },
@@ -104,6 +112,34 @@ const Wallet = () => {
     () => walletData?.usage.find((item) => item.category === selectedCategory),
     [selectedCategory, walletData]
   );
+
+  const balanceNum = Math.max(0, Number.isFinite(Number(balance)) ? Number(balance) : 0);
+
+  const totalAllocated = useMemo(
+    () =>
+      categories.reduce((sum, c) => {
+        const n = Number(budgets[c.id]);
+        const v = Number.isFinite(n) && n > 0 ? n : 0;
+        return sum + v;
+      }, 0),
+    [budgets]
+  );
+
+  const budgetsExceedBalance = totalAllocated > balanceNum;
+
+  const walletOutlook = useMemo(() => {
+    if (!recommendations) return null;
+    const ai = recommendations.aiAnalysis;
+    const main = clipText(ai?.summary || recommendations.forecast || '', 220);
+    const ctx = recommendations.context;
+    const extra = ctx?.weatherActions?.[0]
+      ? clipText(ctx.weatherActions[0], 100)
+      : ctx?.weather
+        ? clipText(ctx.weather, 90)
+        : '';
+    const stateLabel = stateCopy[recommendations.user_state]?.label || recommendations.user_state || 'Budget';
+    return { main, extra, category: recommendations.category, stateLabel };
+  }, [recommendations]);
 
   const loadWallet = async () => {
     if (!userId) return;
@@ -210,11 +246,14 @@ const Wallet = () => {
         <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">Balance and monthly budgets</h2>
-            <p className="text-xs text-muted-foreground mt-1">All amounts are in Pakistani Rupees (PKR).</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Enter your total balance, then split it across categories. The sum of all category budgets cannot exceed
+              that balance.
+            </p>
           </div>
           <button
             onClick={saveWallet}
-            disabled={saving}
+            disabled={saving || budgetsExceedBalance || !userId}
             className="w-full xs:w-auto rounded-xl bg-primary text-primary-foreground px-3 py-2 text-xs font-semibold disabled:opacity-60"
           >
             {saving ? 'Saving...' : 'Save'}
@@ -250,6 +289,27 @@ const Wallet = () => {
               />
             </label>
           ))}
+        </div>
+
+        <div className="rounded-xl border px-3 py-2.5 text-xs space-y-1">
+          <div className="flex flex-wrap justify-between gap-2 font-medium">
+            <span className="text-muted-foreground">Total allocated across categories</span>
+            <span className={budgetsExceedBalance ? 'text-destructive' : 'text-foreground'}>{money(totalAllocated)}</span>
+          </div>
+          <div className="flex flex-wrap justify-between gap-2">
+            <span className="text-muted-foreground">Your balance cap</span>
+            <span>{money(balanceNum)}</span>
+          </div>
+          {budgetsExceedBalance ? (
+            <p className="text-destructive font-medium pt-1">
+              Allocated amounts are {money(totalAllocated - balanceNum)} over your balance. Lower one or more categories or
+              increase your balance before saving.
+            </p>
+          ) : balanceNum > 0 ? (
+            <p className="text-muted-foreground pt-0.5">
+              {money(balanceNum - totalAllocated)} remaining to assign (optional — unassigned balance stays flexible).
+            </p>
+          ) : null}
         </div>
       </section>
 
@@ -294,9 +354,9 @@ const Wallet = () => {
       <section className="space-y-3">
         <div className="flex flex-col xs:flex-row xs:items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">Smart recommendations</h2>
+            <h2 className="text-sm font-semibold">Offers for your budget</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Budget rules pre-filter offers; Groq then explains fit using your limits, recent spend, Tavily, and weather.
+              Choose a spending category below. Matches use your caps and this month&apos;s pace.
             </p>
           </div>
           <select
@@ -329,74 +389,21 @@ const Wallet = () => {
           </div>
         )}
 
-        {recommendations?.aiAnalysis?.summary ? (
-          <div className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-xs">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">AI wallet read</p>
-              <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
-                {recommendations.aiAnalysis.source === 'groq' ? 'Groq' : 'Guided rules'}
-              </span>
-            </div>
-            <p className="text-sm text-foreground leading-relaxed">{recommendations.aiAnalysis.summary}</p>
-            {recommendations.aiAnalysis.tips && recommendations.aiAnalysis.tips.length > 0 && (
-              <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4">
-                {recommendations.aiAnalysis.tips.map((tip) => (
-                  <li key={tip}>{tip}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : null}
-
-        {recommendations && (
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Advisor state</p>
-            <p className="text-sm font-semibold mt-1">
-              {stateCopy[recommendations.user_state]?.label} for {recommendations.category}
+        {walletOutlook && (
+          <div className="rounded-xl border border-border bg-card p-3">
+            <p className="text-xs font-semibold text-foreground">
+              {walletOutlook.stateLabel}
+              {' · '}
+              <span className="capitalize">{walletOutlook.category}</span>
             </p>
-            <p className="text-xs text-muted-foreground mt-1">{recommendations.forecast}</p>
-            {recommendations.context?.weather && (
-              <p className="text-[11px] text-muted-foreground mt-2">Weather: {recommendations.context.weather}</p>
-            )}
-            {recommendations.context?.weatherActions && recommendations.context.weatherActions.length > 0 && (
-              <div className="mt-3 space-y-1.5">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">What to do now</p>
-                {recommendations.context.weatherActions.map((line) => (
-                  <p key={line} className="text-xs text-foreground leading-relaxed">
-                    {line}
-                  </p>
-                ))}
-              </div>
-            )}
-
-            {recommendations.context?.priceBenchmark?.answer &&
-              !/unavailable|no direct answer/i.test(recommendations.context.priceBenchmark.answer) && (
-                <div className="mt-3 rounded-xl border border-border bg-background/60 p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Reference price bands (web search, PKR)
-                  </p>
-                  <p className="text-xs text-foreground leading-relaxed mt-1.5">
-                    {recommendations.context.priceBenchmark.answer}
-                  </p>
-                  {recommendations.context.priceBenchmark.signals && recommendations.context.priceBenchmark.signals.length > 0 && (
-                    <ul className="mt-2 space-y-1 text-[11px] text-muted-foreground list-disc pl-4">
-                      {recommendations.context.priceBenchmark.signals.slice(0, 2).map((s, i) => (
-                        <li key={`${i}-${s.slice(0, 24)}`}>{s.length > 120 ? `${s.slice(0, 117)}…` : s}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <p className="text-[10px] text-muted-foreground mt-2">
-                    Cross-checks your category spend against typical Islamabad / Pakistan ranges from Tavily. Localyse
-                    offer card prices are still merchant-specific.
-                  </p>
-                </div>
-              )}
-
-            {recommendations.context?.insights && recommendations.context.source === 'tavily' && (
-              <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed line-clamp-3">
-                Web context: {recommendations.context.insights}
+            {walletOutlook.main ? (
+              <p className="text-xs text-muted-foreground mt-2 leading-snug">{walletOutlook.main}</p>
+            ) : null}
+            {walletOutlook.extra ? (
+              <p className="text-[11px] text-muted-foreground mt-2 leading-snug border-t border-border/60 pt-2">
+                {walletOutlook.extra}
               </p>
-            )}
+            ) : null}
           </div>
         )}
 

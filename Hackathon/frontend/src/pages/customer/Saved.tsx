@@ -204,7 +204,7 @@ const Saved = () => {
           setAllLiveOffers([]);
           setClaims([]);
           setForYouInfo({
-            message: 'Sign in to see offers matched to your coupon claim history (Groq + Tavily on the server).',
+            message: 'Sign in to see offers personalized from your coupon claim history.',
             filterSource: 'none',
           });
           setFoodAnalysis(null);
@@ -267,7 +267,7 @@ const Saved = () => {
     }
   }, [offers, claims, ignored, impressionKey]);
 
-  /** Claim-history + AI (Groq/Tavily) — mood does not change these scores. */
+  /** Claim-history + personalization — mood does not change these scores. */
   const personalizedOffers = useMemo(() => {
     const claimedOfferIds = new Set(claims.map((claim) => claim.offerId));
 
@@ -277,7 +277,7 @@ const Saved = () => {
         const base = Number(offer.forYouScore ?? 0);
         const baseReasons: string[] = [];
         if (offer.forYouReason) baseReasons.push(offer.forYouReason);
-        if (forYouInfo?.filterSource === 'groq') baseReasons.push('AI-matched to your claim history (Groq)');
+        if (forYouInfo?.filterSource === 'groq') baseReasons.push('AI-matched from your claim history');
         else if (forYouInfo?.filterSource === 'heuristic') baseReasons.push('Matched to your claim history (rules)');
         return {
           offer,
@@ -474,8 +474,8 @@ const Saved = () => {
         <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">Personalized picks</p>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">For you</h1>
         <p className="text-sm text-muted-foreground mt-1.5">
-          Claim-history picks use Groq + Tavily. When you choose a mood, we also surface extra live offers that fit that
-          vibe (in addition to your history-based list).
+          Offers here reflect what you&apos;ve claimed. When you choose a mood, we also surface extra nearby offers that fit
+          that vibe alongside your personalized list.
         </p>
       </section>
 
@@ -487,10 +487,9 @@ const Saved = () => {
           <div>
             <p className="text-sm font-semibold">Claim-history feed</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {forYouInfo?.filterSource === 'groq' && 'Groq matches live offers to your past claims (Tavily adds city context). '}
-              {forYouInfo?.filterSource === 'heuristic' && 'Rule-based match to your claims (add GROQ_API_KEY for full AI). '}
+              {forYouInfo?.filterSource === 'groq' && 'Offers are ranked with AI based on past claims and local context. '}
+              {forYouInfo?.filterSource === 'heuristic' && 'Offers are ranked with rules tuned to past claims until full personalization is available. '}
               {forYouInfo?.filterSource === 'none' && (forYouInfo?.message || 'Sign in and claim offers to unlock this feed. ')}
-              {forYouInfo?.tavilyUsed ? 'Tavily: on · ' : claims.length > 0 ? 'Tavily: optional · ' : ''}
               {personalizationSummary.length > 0 ? personalizationSummary.join(' · ') : 'Your preference signals come from real claims, not just profile settings.'}
             </p>
           </div>

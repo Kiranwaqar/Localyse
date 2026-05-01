@@ -148,7 +148,9 @@ const Auth = () => {
           });
           if (data.verificationEmailSent === false) {
             toast.warning('Email may not have been sent', {
-              description: data.message || 'Fix SMTP on the server, then use Resend on sign-in.',
+              description:
+                data.message ||
+                'We could not send the verification email right now. Try again shortly or contact support if this continues.',
             });
           } else {
             toast.info('Check your email', { description: 'We sent a verification link.' });
@@ -181,7 +183,7 @@ const Auth = () => {
         ...(conflict
           ? {
               description:
-                'Resetting MongoDB does not clear this browser. Use “Sign out on this device” above if you still see an old session. If this persists, remove the email from both the users and merchants collections (an address cannot be both).',
+                'One email can serve both merchant and wallet: use the correct password / Google role, verify your wallet email first if you’re adding a business, then sign out on this device if the browser cached an old session.',
               duration: 10_000,
             }
           : {}),
@@ -252,7 +254,7 @@ const Auth = () => {
       ...(conflict
         ? {
             description:
-              'Same checks as email sign-up: clear the other account type in the database, or sign out here if only the browser was out of date.',
+              'One email works for merchant and wallet. Try the matching role (“Continue with Google” vs password). Sign out above if something looks cached.',
             duration: 10_000,
           }
         : {}),
@@ -279,7 +281,7 @@ const Auth = () => {
                 <span className="text-foreground">{browserSession.email}</span> ({browserSession.role})
               </p>
               <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                Clearing the database does not remove this session. Sign out here before re-using the same email.
+                Clearing this device’s saved session doesn’t change your password on our servers. Sign out before reusing the same email on a different role.
               </p>
               <button
                 type="button"

@@ -68,7 +68,7 @@ const VerifyEmail = () => {
         const msg = e instanceof Error ? e.message : 'Verification failed.';
         const hint =
           /Something went wrong|Failed to fetch|NetworkError/i.test(msg) || !msg.trim()
-            ? ' On Vercel, clear VITE_API_URL or remove any localhost value so the site uses the live /api routes.'
+            ? ' If you continue to see this, try signing in again or open this site from its normal web address.'
             : '';
         setErrMsg(msg + hint);
         toast.error(msg);

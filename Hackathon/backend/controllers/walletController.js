@@ -43,6 +43,10 @@ const normalizeBudgets = (budgets = {}) =>
     return acc;
   }, {});
 
+const sumMonthlyBudgets = (budgets) =>
+  CATEGORIES.reduce((total, cat) => total + Math.max(0, Number(budgets?.[cat] ?? 0)), 0);
+
+
 const parseAmount = (value) => {
   if (typeof value === "number") return value;
   const cleaned = String(value || "").replace(/[^0-9.-]/g, "");
@@ -177,13 +181,23 @@ const updateWallet = async (req, res, next) => {
   try {
     const wallet = await getOrCreateWallet(req.params.userId);
 
-    if (req.body.balance !== undefined) {
-      wallet.balance = Math.max(0, Number(req.body.balance || 0));
+    const nextBalance =
+      req.body.balance !== undefined ? Math.max(0, Number(req.body.balance || 0)) : Number(wallet.balance || 0);
+
+    const nextMonthlyBudgets = req.body.monthlyBudgets
+      ? normalizeBudgets(req.body.monthlyBudgets)
+      : normalizeBudgets(wallet.monthlyBudgets || {});
+
+    const allocated = sumMonthlyBudgets(nextMonthlyBudgets);
+
+    if (allocated > nextBalance) {
+      return res.status(400).json({
+        message: `Monthly category budgets (${formatPkr(allocated)} total) cannot exceed your current balance (${formatPkr(nextBalance)}). Lower category amounts or increase your balance.`,
+      });
     }
 
-    if (req.body.monthlyBudgets) {
-      wallet.monthlyBudgets = normalizeBudgets(req.body.monthlyBudgets);
-    }
+    wallet.balance = nextBalance;
+    wallet.monthlyBudgets = nextMonthlyBudgets;
 
     await wallet.save();
     res.json(await buildWalletResponse(req.params.userId));

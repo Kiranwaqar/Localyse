@@ -87,7 +87,7 @@ const ForgotPassword = () => {
               <p className="text-sm text-foreground leading-relaxed">{doneMessage}</p>
               {import.meta.env.DEV && devPath && (
                 <p className="text-xs">
-                  <span className="text-muted-foreground">Dev (SMTP off): </span>
+                  <span className="text-muted-foreground">Preview link: </span>
                   <Link to={devPath} className="text-primary font-medium break-all">
                     Open reset link
                   </Link>

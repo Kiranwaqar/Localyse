@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { claimOffer, getCustomerCouponClaims, getOffers } from '@/lib/api';
 import type { Offer } from '@/lib/domain';
 import { getSession } from '@/lib/auth';
+import { useCustomerNotifications } from '@/contexts/CustomerNotificationsContext';
 
 type Coordinates = {
   lat: number;
@@ -47,6 +48,7 @@ const getPinPosition = (center: Coordinates, pin: Coordinates) => {
 
 const MapView = () => {
   const session = getSession();
+  const { push: pushNotification } = useCustomerNotifications();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
   const [locationError, setLocationError] = useState('');
@@ -150,6 +152,13 @@ const MapView = () => {
       });
 
       setOffers((current) => current.filter((item) => item.id !== offer.id));
+      if (!result.alreadyClaimed) {
+        pushNotification({
+          title: 'Offer claimed',
+          body: `${offer.merchantName} — coupon ${result.couponCode}. Open your wallet to use it.`,
+          href: '/app/wallet',
+        });
+      }
       toast.success(`Offer claimed at ${offer.merchantName}`, {
         description: result.walletImpact
           ? `Coupon code: ${result.couponCode} · ${result.walletImpact.message}`

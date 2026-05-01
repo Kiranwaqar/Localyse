@@ -93,7 +93,12 @@ const googleAuth = async (req, res, next) => {
       }
       console.error("[auth/google] verifyIdToken failed:", msg, {
         tokenAud: tokenAud || "(could not read)",
-        serverAudience: getGoogleClientId(),
+        serverIdLen: getGoogleClientId().length,
+        audienceMatchesToken: tokenAud !== "" && tokenAud === getGoogleClientId(),
+        hint:
+          tokenAud && tokenAud !== getGoogleClientId()
+            ? "Set Vercel GOOGLE_CLIENT_ID to exactly the same Web client ID as VITE_GOOGLE_CLIENT_ID (no quotes/spaces). Redeploy."
+            : undefined,
       });
       return res.status(401).json({ message: "Could not verify Google. Please try again." });
     }

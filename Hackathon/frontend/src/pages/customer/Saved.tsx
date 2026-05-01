@@ -9,6 +9,7 @@ import {
   getOffers,
 } from '@/lib/api';
 import { getSession } from '@/lib/auth';
+import { useCustomerNotifications } from '@/contexts/CustomerNotificationsContext';
 import type { CouponClaim, FoodAnalysis, MoodSuggestion, Offer } from '@/lib/domain';
 import { toast } from 'sonner';
 
@@ -164,6 +165,7 @@ const getMoodBoost = (offer: Offer, moodId: MoodId | '') => {
 
 const Saved = () => {
   const session = getSession();
+  const { push: pushNotification } = useCustomerNotifications();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [claims, setClaims] = useState<CouponClaim[]>([]);
   const [foodAnalysis, setFoodAnalysis] = useState<FoodAnalysis | null>(null);
@@ -433,6 +435,13 @@ const Saved = () => {
         },
         ...current,
       ]);
+      if (!result.alreadyClaimed) {
+        pushNotification({
+          title: 'Offer claimed',
+          body: `${offer.merchantName} — coupon ${result.couponCode}. Open your wallet to use it.`,
+          href: '/app/wallet',
+        });
+      }
       toast.success(`Offer claimed at ${offer.merchantName}`, {
         description: result.walletImpact
           ? `Coupon code: ${result.couponCode} · ${result.walletImpact.message}`

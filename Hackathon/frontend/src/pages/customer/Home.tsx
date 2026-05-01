@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { OfferCard } from '@/components/OfferCard';
 import { Category, Offer } from '@/lib/domain';
 import { getSession } from '@/lib/auth';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { claimOffer, getCustomerCouponClaims, getOffers } from '@/lib/api';
+import { useCustomerNotifications } from '@/contexts/CustomerNotificationsContext';
 
 const filters: { id: Category | 'all'; label: string; icon: string }[] = [
   { id: 'all', label: 'All', icon: 'bi-grid' },
@@ -16,40 +17,85 @@ const filters: { id: Category | 'all'; label: string; icon: string }[] = [
 
 const Home = () => {
   const session = getSession();
+  const { push: pushNotification } = useCustomerNotifications();
   const [filter, setFilter] = useState<Category | 'all'>('all');
   const [liveOffers, setLiveOffers] = useState<Offer[]>([]);
-  const [insight, setInsight] = useState('Loading AI city context from Localyse...');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [claimedCount, setClaimedCount] = useState(0);
+  const feedSectionRef = useRef<HTMLElement>(null);
   const offers = filter === 'all' ? liveOffers : liveOffers.filter((o) => o.category === filter);
+  const filterLabel = filters.find((f) => f.id === filter)?.label ?? 'All';
+
+  const loadOffers = useCallback(async (options: { silent?: boolean } = {}) => {
+    const silent = options.silent === true;
+    try {
+      setLoadError(null);
+      if (!silent) setLoading(true);
+      const [result, history] = await Promise.all([
+        getOffers(),
+        session?._id || session?.email
+          ? getCustomerCouponClaims({ customerId: session?._id, customerEmail: session?.email })
+          : Promise.resolve({ claims: [], summary: { totalClaims: 0, redeemedClaims: 0, pendingClaims: 0 } }),
+      ]);
+      const claimedOfferIds = new Set(history.claims.map((claim) => claim.offerId));
+      const unclaimedOffers = result.filter((offer) => !claimedOfferIds.has(offer.id));
+
+      setLiveOffers(unclaimedOffers);
+      setClaimedCount(history.summary.totalClaims);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load live offers.';
+      setLoadError(message);
+      toast.error('Could not load live offers', { description: message });
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [session?._id, session?.email]);
 
   useEffect(() => {
-    const loadOffers = async () => {
-      try {
-        setLoading(true);
-        const [result, history] = await Promise.all([
-          getOffers(),
-          session?._id || session?.email
-            ? getCustomerCouponClaims({ customerId: session?._id, customerEmail: session?.email })
-            : Promise.resolve({ claims: [], summary: { totalClaims: 0, redeemedClaims: 0, pendingClaims: 0 } }),
-        ]);
-        const claimedOfferIds = new Set(history.claims.map((claim) => claim.offerId));
-        const unclaimedOffers = result.filter((offer) => !claimedOfferIds.has(offer.id));
+    void loadOffers();
+  }, [loadOffers]);
 
-        setLiveOffers(unclaimedOffers);
-        setClaimedCount(history.summary.totalClaims);
-        setInsight(unclaimedOffers.length > 0 ? 'Showing live offers from MongoDB.' : 'No unclaimed live offers are available yet.');
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Could not load live offers.';
-        setInsight(message);
-        toast.error('Could not load live offers', { description: message });
-      } finally {
-        setLoading(false);
-      }
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loadOffers({ silent: true });
     };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadOffers]);
 
-    loadOffers();
-  }, [session?._id, session?.email]);
+  const scrollToFeed = () => {
+    feedSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const bannerHeadline = (() => {
+    if (loading) return 'Syncing live offers…';
+    if (loadError) return 'Couldn’t refresh offers';
+    const total = liveOffers.length;
+    const inView = offers.length;
+    if (total === 0) return 'No live offers match your context';
+    if (filter !== 'all' && inView === 0) return `No ${filterLabel.toLowerCase()} offers in your feed`;
+    if (filter !== 'all')
+      return `${inView} live ${filterLabel.toLowerCase()} offer${inView === 1 ? '' : 's'} for you`;
+    return `${total} live offer${total === 1 ? '' : 's'} match your context`;
+  })();
+
+  const bannerSubtext = (() => {
+    if (loading) return 'Pulling the latest unclaimed deals and your claim history.';
+    if (loadError) {
+      return liveOffers.length > 0
+        ? `${loadError} Showing your last loaded feed.`
+        : loadError;
+    }
+    const total = liveOffers.length;
+    const inView = offers.length;
+    if (total === 0) return 'No unclaimed live offers are available yet.';
+    if (filter !== 'all' && inView === 0)
+      return `Change category — you still have ${total} unclaimed offer${total === 1 ? '' : 's'} in other tabs.`;
+    if (filter !== 'all')
+      return `${total} unclaimed total · showing ${filterLabel.toLowerCase()} only.`;
+    return 'Tap to jump to your feed. Offers refresh when you return to this tab.';
+  })();
 
   const onClaimOffer = async (offer: Offer) => {
     try {
@@ -61,6 +107,13 @@ const Home = () => {
 
       setLiveOffers((current) => current.filter((item) => item.id !== offer.id));
       setClaimedCount((count) => count + (result.alreadyClaimed ? 0 : 1));
+      if (!result.alreadyClaimed) {
+        pushNotification({
+          title: 'Offer claimed',
+          body: `${offer.merchantName} — coupon ${result.couponCode}. Open your wallet to use it.`,
+          href: '/app/wallet',
+        });
+      }
       toast.success(`Offer claimed at ${offer.merchantName}`, {
         description: result.walletImpact
           ? `Coupon code: ${result.couponCode} · ${result.walletImpact.message}`
@@ -82,22 +135,31 @@ const Home = () => {
         </h1>
       </section>
 
-      {/* AI insight banner */}
-      <div className="bg-card border border-border rounded-2xl p-3.5 xs:p-4 flex items-start gap-3 shadow-xs relative overflow-hidden">
+      {/* Live offers summary — wired to API + filters; tap scrolls to feed */}
+      <button
+        type="button"
+        onClick={scrollToFeed}
+        className={cn(
+          'group w-full text-left bg-card border border-border rounded-2xl p-3.5 xs:p-4 flex items-start gap-3 shadow-xs relative overflow-hidden',
+          'transition hover:border-foreground/25 hover:bg-card/90 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+        )}
+        aria-label="Scroll to your offer feed"
+      >
         <div className="absolute top-0 right-0 w-24 h-24 bg-warning-soft rounded-full -mr-10 -mt-10 opacity-70 pointer-events-none" />
         <div className="w-10 h-10 rounded-xl bg-lavender text-lavender-foreground flex items-center justify-center shrink-0 relative">
-          <i className="bi bi-stars text-base" />
+          <i
+            className={cn(
+              'bi text-base transition-transform',
+              loading ? 'bi-arrow-repeat animate-spin' : 'bi-stars group-hover:scale-105'
+            )}
+          />
         </div>
-        <div className="flex-1 min-w-0 relative">
-          <p className="text-sm font-medium leading-snug">
-            {loading ? 'Generating AI offers...' : `${offers.length} live offers match your context`}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-            {insight}
-          </p>
+        <div className="flex-1 min-w-0 relative pr-1">
+          <p className="text-sm font-medium leading-snug text-pretty">{bannerHeadline}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed text-pretty">{bannerSubtext}</p>
         </div>
-        <i className="bi bi-chevron-right text-muted-foreground text-xs mt-1 relative" />
-      </div>
+        <i className="bi bi-chevron-right text-muted-foreground text-xs mt-1 shrink-0 relative group-hover:translate-x-0.5 transition-transform" aria-hidden />
+      </button>
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 gap-2">
@@ -133,7 +195,7 @@ const Home = () => {
       </div>
 
       {/* Feed */}
-      <section className="space-y-3">
+      <section ref={feedSectionRef} id="for-you-feed" className="space-y-3 scroll-mt-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight">For you</h2>
           <span className="text-xs text-muted-foreground">{offers.length} live</span>

@@ -53,7 +53,7 @@ const Landing = () => {
       </header>
 
       {/* HERO */}
-      <section className="relative pt-12 sm:pt-20 pb-16 sm:pb-28">
+      <section className="relative pt-10 sm:pt-20 pb-12 sm:pb-28">
         {/* Bubbly pastel shapes */}
         <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-20 -left-24 h-72 w-72 sm:w-[420px] sm:h-[420px] rounded-full bg-primary-soft blur-3xl opacity-70" />
@@ -62,13 +62,13 @@ const Landing = () => {
         </div>
 
         <div className="relative max-w-7xl mx-auto px-3 xs:px-4 sm:px-8 text-center">
-          <span className="inline-flex items-center gap-2 text-xs font-medium text-primary bg-primary-soft px-3 py-1.5 rounded-full mb-6 animate-fade-up">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-            Now live with real backend data
-            <i className="bi bi-arrow-right text-[10px]" />
+          <span className="inline-flex items-center justify-center gap-2 text-xs font-medium text-primary bg-primary-soft px-3 py-1.5 rounded-full mb-6 mx-auto max-w-full text-center whitespace-normal leading-snug animate-fade-up">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+            <span className="min-w-0">Now live with real backend data</span>
+            <i className="bi bi-arrow-right text-[10px] shrink-0" />
           </span>
 
-          <h1 className="text-4xl xs:text-[40px] sm:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.05] max-w-4xl mx-auto text-balance animate-fade-up" style={{ animationDelay: '60ms' }}>
+          <h1 className="text-[1.75rem] leading-[1.08] xs:text-4xl xs:leading-[1.05] sm:text-6xl lg:text-7xl font-semibold tracking-tight max-w-4xl mx-auto text-pretty animate-fade-up px-0.5" style={{ animationDelay: '60ms' }}>
             The AI wallet that knows{' '}
             <span className="relative inline-block">
               <span className="relative z-10">your city.</span>
@@ -76,7 +76,7 @@ const Landing = () => {
             </span>
           </h1>
 
-          <p className="mt-5 sm:mt-7 text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed text-balance animate-fade-up" style={{ animationDelay: '120ms' }}>
+          <p className="mt-5 sm:mt-7 text-[15px] sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed text-pretty animate-fade-up px-0.5" style={{ animationDelay: '120ms' }}>
             Localyse turns your city into a smart, real-time marketplace. Discover personal,
             context-aware offers from cafés, retail, and fitness — curated by AI.
           </p>
@@ -97,14 +97,14 @@ const Landing = () => {
             </a>
           </div>
 
-          <p className="mt-6 text-xs text-muted-foreground flex items-center justify-center gap-4 flex-wrap animate-fade-up" style={{ animationDelay: '240ms' }}>
+          <p className="mt-6 text-xs text-muted-foreground flex items-center justify-center gap-x-3 gap-y-2 sm:gap-4 flex-wrap px-1 animate-fade-up" style={{ animationDelay: '240ms' }}>
             <span className="flex items-center gap-1.5"><i className="bi bi-check2-circle text-success" /> Free for customers</span>
             <span className="flex items-center gap-1.5"><i className="bi bi-shield-check text-success" /> Privacy-first</span>
             <span className="flex items-center gap-1.5"><i className="bi bi-lightning-charge text-success" /> Real-time</span>
           </p>
 
           {/* Floating product preview */}
-          <div className="relative mt-14 sm:mt-20 max-w-4xl mx-auto animate-fade-up" style={{ animationDelay: '300ms' }}>
+          <div className="relative mt-10 sm:mt-20 w-full min-w-0 max-w-4xl mx-auto animate-fade-up" style={{ animationDelay: '300ms' }}>
             <div className="absolute -top-6 -left-4 sm:-left-10 w-20 h-20 rounded-3xl bg-primary-soft border border-primary/20 rotate-[-8deg] hidden sm:flex items-center justify-center shadow-md">
               <i className="bi bi-cup-hot text-primary text-2xl" />
             </div>
@@ -115,24 +115,28 @@ const Landing = () => {
               <i className="bi bi-stars text-warning-fg text-xl" />
             </div>
 
-            <div className="bg-card border border-border rounded-3xl shadow-lg overflow-hidden">
-              <div className="border-b border-border px-5 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="w-2.5 h-2.5 rounded-full bg-destructive/60" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-warning/60" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-success/60" />
-                  <span className="ml-3 hidden sm:inline">localyse.app/feed</span>
+            <div className="bg-card border border-border rounded-2xl sm:rounded-3xl shadow-lg overflow-hidden w-full min-w-0">
+              <div className="border-b border-border px-3 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-muted-foreground min-w-0 flex-1">
+                  <span className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+                    <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-destructive/60" />
+                    <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-warning/60" />
+                    <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-success/60" />
+                  </span>
+                  <span className="ml-1 sm:ml-3 text-[10px] sm:text-xs truncate min-w-0">
+                    localyse.app/feed
+                  </span>
                 </div>
-                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success" /> Live
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1 shrink-0 tabular-nums">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" /> Live
                 </span>
               </div>
-              <div className="p-5 sm:p-7 bg-gradient-to-b from-transparent to-primary-soft/30">
-                <div className="rounded-2xl border border-dashed border-border bg-card/80 p-5 sm:p-8 text-center">
+              <div className="p-3 xs:p-5 sm:p-7 bg-gradient-to-b from-transparent to-primary-soft/30">
+                <div className="rounded-xl sm:rounded-2xl border border-dashed border-border bg-card/80 p-4 sm:p-6 md:p-8 text-center min-w-0">
                   <i className="bi bi-stars text-2xl text-primary" />
-                  <p className="text-sm font-semibold mt-3">Live offers come from your backend</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Connect merchants and generate offers to populate this preview with real MongoDB data.
+                  <p className="text-sm font-semibold mt-3 text-pretty px-0.5">See offers go live the moment you publish</p>
+                  <p className="text-[13px] sm:text-xs text-muted-foreground mt-1.5 max-w-md mx-auto text-pretty leading-relaxed px-0.5">
+                    Onboard merchants, launch promotions, and this feed stays in sync with your live data so the preview matches what customers see.
                   </p>
                 </div>
               </div>
@@ -143,7 +147,7 @@ const Landing = () => {
 
       {/* SOCIAL PROOF STRIP */}
       <section className="border-y border-border bg-card/40">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-8 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-4 text-center">
+        <div className="max-w-7xl mx-auto px-3 xs:px-4 sm:px-8 py-8 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-6 sm:gap-4 text-center">
           {[
             { icon: 'bi-shop', l: 'Real merchants' },
             { icon: 'bi-broadcast', l: 'Live offers' },
@@ -160,7 +164,7 @@ const Landing = () => {
 
       {/* HOW IT WORKS */}
       <section id="how" className="py-20 sm:py-28">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8">
+        <div className="max-w-7xl mx-auto px-3 xs:px-4 sm:px-8">
           <SectionHeader
             kicker="How it works"
             title="From signal to savings, in three steps."
@@ -171,7 +175,7 @@ const Landing = () => {
             {[
               { n: '01', icon: 'bi-broadcast-pin', tone: 'primary', title: 'We sense the moment', body: 'Weather, time of day, location, payday cycles, and your preferences become live signals.' },
               { n: '02', icon: 'bi-cpu', tone: 'lavender', title: 'AI curates the offer', body: 'Our model matches signals to merchant goals — surfacing the most relevant offer near you.' },
-              { n: '03', icon: 'bi-tag', tone: 'warning', title: 'You claim and save', body: 'Tap to claim. Show the QR. Your savings, history, and streak update instantly.' },
+              { n: '03', icon: 'bi-tag', tone: 'warning', title: 'You claim and save', body: 'Tap to claim. Show the coupon code. Your savings, history, and streak update instantly.' },
             ].map((step, i) => (
               <div
                 key={step.n}
@@ -198,7 +202,7 @@ const Landing = () => {
 
       {/* FEATURES */}
       <section id="features" className="py-20 sm:py-28 bg-card/40 border-y border-border">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8">
+        <div className="max-w-7xl mx-auto px-3 xs:px-4 sm:px-8">
           <SectionHeader
             kicker="Features"
             title="A new operating system for local commerce."
@@ -248,7 +252,7 @@ const Landing = () => {
 
       {/* AUDIENCE — DUAL VALUE PROP */}
       <section id="audience" className="py-20 sm:py-28">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8">
+        <div className="max-w-7xl mx-auto px-3 xs:px-4 sm:px-8">
           <SectionHeader
             kicker="Built for both sides"
             title="Two products. One city. One wallet."
@@ -288,8 +292,8 @@ const Landing = () => {
 
       {/* CTA BAND */}
       <section className="pb-20 sm:pb-28">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8">
-          <div className="relative bg-card border border-border rounded-3xl p-8 sm:p-14 text-center overflow-hidden shadow-md">
+        <div className="max-w-7xl mx-auto px-3 xs:px-4 sm:px-8">
+          <div className="relative bg-card border border-border rounded-2xl sm:rounded-3xl p-6 sm:p-10 md:p-14 text-center overflow-hidden shadow-md">
             <div aria-hidden className="absolute inset-0 pointer-events-none">
               <div className="absolute -top-20 -left-10 w-72 h-72 rounded-full bg-primary-soft blur-3xl opacity-80" />
               <div className="absolute -bottom-20 -right-10 w-72 h-72 rounded-full bg-lavender-soft blur-3xl opacity-80" />
@@ -326,7 +330,7 @@ const Landing = () => {
 
       {/* FOOTER */}
       <footer className="border-t border-border bg-card/40">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-12 sm:py-16">
+        <div className="max-w-7xl mx-auto px-3 xs:px-4 sm:px-8 py-12 sm:py-16">
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10">
             <div className="lg:col-span-1">
               <Link to="/" className="flex items-center gap-2.5 mb-4">
@@ -377,14 +381,14 @@ const Landing = () => {
 /* ---------- Sub-components ---------- */
 
 const SectionHeader = ({ kicker, title, subtitle }: { kicker: string; title: string; subtitle: string }) => (
-  <div className="text-center max-w-2xl mx-auto">
+  <div className="text-center max-w-2xl mx-auto px-0.5">
     <span className="inline-flex items-center text-[11px] font-semibold uppercase tracking-wider text-primary bg-primary-soft px-2.5 py-1 rounded-full mb-4">
       {kicker}
     </span>
-    <h2 className="text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight leading-[1.1] text-balance">
+    <h2 className="text-[1.625rem] xs:text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight leading-[1.12] sm:leading-[1.1] text-pretty">
       {title}
     </h2>
-    <p className="mt-4 text-base text-muted-foreground leading-relaxed text-balance">{subtitle}</p>
+    <p className="mt-4 text-[15px] sm:text-base text-muted-foreground leading-relaxed text-pretty">{subtitle}</p>
   </div>
 );
 
@@ -414,7 +418,7 @@ const AudienceCard = ({ tone, icon, kicker, title, points, cta, ctaHref }: {
   const isPink = tone === 'pink';
   return (
     <div className={
-      'relative rounded-3xl p-7 sm:p-9 border overflow-hidden ' +
+      'relative rounded-2xl sm:rounded-3xl p-5 sm:p-7 md:p-9 border overflow-hidden ' +
       (isPink ? 'bg-primary-soft border-primary/20' : 'bg-lavender-soft border-lavender/20')
     }>
       <div aria-hidden className={

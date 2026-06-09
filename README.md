@@ -2,6 +2,9 @@
 
 # 🏙️ Localyse
 
+# Live Demo:
+https://localyse-tawny.vercel.app/
+
 ### AI-Powered Finance-Aware City Wallet
 
 <br/>
